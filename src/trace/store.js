@@ -166,6 +166,9 @@ export async function writeSummary(traceDir, trace) {
 
   for (const state of trace.states) {
     lines.push(`- ${state.id} ${state.label}`);
+    if (state.route) {
+      lines.push(`  - Route: ${state.route}`);
+    }
     lines.push(`  - URL: ${state.url}`);
     lines.push(`  - Image: ${state.image}`);
     if (state.diffFromPrevious) {

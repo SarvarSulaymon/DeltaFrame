@@ -3,7 +3,9 @@ import test from "node:test";
 import { parseArgs } from "../src/utils/args.js";
 import {
   padNumber,
+  labelWithRoute,
   parseViewport,
+  routeFromUrl,
   slugify,
   timestampSlug,
   toPosixPath
@@ -44,6 +46,12 @@ test("format helpers produce stable trace-friendly values", () => {
   assert.equal(padNumber(7), "0007");
   assert.equal(slugify("  Landing Flow: Step #2!  "), "landing-flow-step-2");
   assert.equal(slugify("!!!", "fallback"), "fallback");
+  assert.equal(routeFromUrl("http://localhost:3000"), "/");
+  assert.equal(routeFromUrl("http://localhost:3000/products/42?tab=details#pricing"), "/products/42?tab=details#pricing");
+  assert.equal(routeFromUrl("not a url"), "");
+  assert.equal(labelWithRoute("initial", "http://localhost:3000/products/42?tab=details#pricing"), "initial /products/42?tab=details#pricing");
+  assert.equal(labelWithRoute("changed-001234ms", "not a url"), "changed-001234ms");
+  assert.equal(slugify(labelWithRoute("initial", "http://localhost:3000/products/42?tab=details#pricing")), "initial-products-42-tab-details-pricing");
   assert.equal(timestampSlug(new Date("2026-06-06T17:04:05.123Z")), "2026-06-06-17-04-05");
   assert.equal(toPosixPath("frames\\0001.png"), "frames/0001.png");
 });

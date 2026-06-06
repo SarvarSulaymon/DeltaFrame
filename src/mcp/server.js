@@ -313,6 +313,7 @@ class DeltaFrameMcpServer {
     const states = trace.states.map((state) => ({
       id: state.id,
       label: state.label,
+      route: state.route || null,
       timestampMs: state.timestampMs,
       url: state.url,
       changedRatio: state.metrics?.ratio ?? null,
@@ -520,7 +521,8 @@ function buildSummary(traceDir, trace) {
   lines.push("");
   for (const state of trace.states) {
     const changed = state.metrics ? `${(state.metrics.ratio * 100).toFixed(3)}% changed` : "initial";
-    lines.push(`- ${state.id} ${state.label}: ${changed}, ${state.url}`);
+    const route = state.route ? `, route ${state.route}` : "";
+    lines.push(`- ${state.id} ${state.label}: ${changed}${route}, ${state.url}`);
   }
   return lines.join("\n");
 }

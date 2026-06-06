@@ -12,6 +12,21 @@ export function slugify(value, fallback = "trace") {
   return slug || fallback;
 }
 
+export function routeFromUrl(value) {
+  try {
+    const url = new URL(value);
+    return `${url.pathname || "/"}${url.search}${url.hash}`;
+  } catch {
+    return "";
+  }
+}
+
+export function labelWithRoute(label, url) {
+  const base = String(label || "").trim() || "state";
+  const route = routeFromUrl(url);
+  return route ? `${base} ${route}` : base;
+}
+
 export function timestampSlug(date = new Date()) {
   const iso = date.toISOString();
   return iso

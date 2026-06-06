@@ -21,8 +21,8 @@ Example:
   "createdAt": "2026-06-06T12:00:00.000Z",
   "source": {
     "type": "web",
-    "url": "http://localhost:3000",
-    "finalUrl": "http://localhost:3000/",
+    "url": "http://localhost:3000/products/42?tab=details#pricing",
+    "finalUrl": "http://localhost:3000/products/42?tab=details#pricing",
     "viewport": {
       "width": 1440,
       "height": 900
@@ -40,20 +40,22 @@ Example:
   "states": [
     {
       "id": "0001",
-      "label": "initial",
+      "label": "initial /products/42?tab=details#pricing",
+      "route": "/products/42?tab=details#pricing",
       "timestampMs": 612,
-      "url": "http://localhost:3000/",
+      "url": "http://localhost:3000/products/42?tab=details#pricing",
       "title": "Prototype",
-      "image": "frames/0001-initial.png",
+      "image": "frames/0001-initial-products-42-tab-details-pricing.png",
       "console": []
     },
     {
       "id": "0002",
-      "label": "changed-001284ms",
+      "label": "changed-001284ms /products/42?tab=details#pricing",
+      "route": "/products/42?tab=details#pricing",
       "timestampMs": 1284,
-      "url": "http://localhost:3000/",
+      "url": "http://localhost:3000/products/42?tab=details#pricing",
       "title": "Prototype",
-      "image": "frames/0002-changed-001284ms.png",
+      "image": "frames/0002-changed-001284ms-products-42-tab-details-pricing.png",
       "diffFromPrevious": "diffs/0001-0002.png",
       "metrics": {
         "changedPixels": 12440,
@@ -84,6 +86,10 @@ These IDs are what MCP tools use.
 ## Paths
 
 All image paths inside `trace.json` are relative to the trace folder and use forward slashes.
+
+## Routes
+
+Web captures store a human-readable `route` for each state when the page URL can be parsed. The route is the URL pathname plus search and hash, for example `/products/42?tab=details#pricing`. State labels include this route context, and frame filenames are still made safe through DeltaFrame's normal slugification.
 
 ## Metrics
 

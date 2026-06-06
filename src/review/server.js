@@ -421,6 +421,7 @@ function buildHtml(initialTrace) {
           '<dt>ID</dt><dd>' + state.id + '</dd>' +
           '<dt>Status</dt><dd>' + (ignored ? "ignored" : "kept") + '</dd>' +
           '<dt>Label</dt><dd>' + escapeHtml(state.label) + '</dd>' +
+          (state.route ? '<dt>Route</dt><dd>' + escapeHtml(state.route) + '</dd>' : '') +
           '<dt>URL</dt><dd>' + escapeHtml(state.url) + '</dd>' +
           '<dt>Changed</dt><dd>' + pct(state.metrics && state.metrics.ratio) + '</dd>' +
           '<dt>Image</dt><dd>' + escapeHtml(state.image) + '</dd>' +

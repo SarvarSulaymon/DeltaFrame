@@ -3,7 +3,7 @@ import path from "node:path";
 import { diffPngBuffers } from "../diff/imageDiff.js";
 import { createTraceDir, writeSummary, writeTrace } from "../trace/store.js";
 import { loadPackage } from "../utils/deps.js";
-import { padNumber, sleep, slugify } from "../utils/format.js";
+import { labelWithRoute, padNumber, routeFromUrl, sleep, slugify } from "../utils/format.js";
 
 export async function watchWeb(options) {
   const log = options.verbose ? (message) => console.error(`[deltaframe] ${message}`) : () => {};
@@ -211,7 +211,10 @@ async function capture(page, options) {
 
 async function saveState(input) {
   const id = padNumber(input.trace.states.length + 1);
-  const imageName = `${id}-${slugify(input.label, "state")}.png`;
+  const url = input.page.url();
+  const route = routeFromUrl(url);
+  const label = labelWithRoute(input.label, url);
+  const imageName = `${id}-${slugify(label, "state")}.png`;
   const imagePath = path.join(input.traceDir, "frames", imageName);
   await fs.writeFile(imagePath, input.buffer);
 
@@ -235,9 +238,10 @@ async function saveState(input) {
 
   const state = {
     id,
-    label: input.label,
+    label,
+    ...(route ? { route } : {}),
     timestampMs: Date.now() - input.startedAt,
-    url: input.page.url(),
+    url,
     title: await safeTitle(input.page),
     image: `frames/${imageName}`,
     diffFromPrevious,
