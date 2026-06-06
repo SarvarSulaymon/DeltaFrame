@@ -21,7 +21,7 @@ Use DeltaFrame when the user has captured a visual trace with `deltaframe watch`
 6. Inspect only the state images needed to understand the UI issue.
 7. Compare adjacent states when the issue is a layout shift, transition, modal, validation, hover, loading, or responsive breakpoint.
 8. Use `deltaframe_review_trace` when a human-readable local review UI would help; run the returned command outside MCP.
-9. Make focused code changes and recapture when visual verification is needed.
+9. Make focused code changes, recapture when visual verification is needed, then use `deltaframe_compare_traces` to compare the before and after traces.
 
 ## UI Review Prompt Templates
 
@@ -45,6 +45,7 @@ If MCP tools are not available, use the local CLI:
 ```bash
 deltaframe watch --url <url> --duration 10000
 deltaframe summarize <trace-dir>
+deltaframe compare <before-trace-dir> <after-trace-dir>
 deltaframe review <trace-dir>
 ```
 

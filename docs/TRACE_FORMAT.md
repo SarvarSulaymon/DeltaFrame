@@ -151,6 +151,17 @@ Example:
 
 When exporting a curated trace, DeltaFrame copies only kept states and carries annotations only for those kept states into the exported trace metadata.
 
+## Trace Comparisons
+
+`deltaframe compare` and the MCP `deltaframe_compare_traces` tool do not write a new trace folder. They load two existing trace folders, read each trace's optional `curation.json`, and return a compact before/after report with:
+
+- trace metadata for the before and after captures
+- counts for matched, changed, unchanged, added, and removed states
+- per-state changes for labels, routes, image/diff presence, changed-pixel ratio, annotations, and diagnostic counts
+- a Markdown verification summary for Codex or a human reviewer
+
+The comparison is metadata-first and deterministic. Use state images, diffs, or MCP resources for pixel-level proof when a comparison row needs visual inspection.
+
 ## Routes
 
 Web captures store a human-readable `route` for each state when the page URL can be parsed. The route is the URL pathname plus search and hash, for example `/products/42?tab=details#pricing`. State labels include this route context, and frame filenames are still made safe through DeltaFrame's normal slugification.

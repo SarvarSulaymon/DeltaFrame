@@ -33,7 +33,7 @@ DeltaFrame should stay narrow: a helper for visual state memory during AI-assist
 - [x] prompt templates for UI review
 - [x] Codex plugin marketplace polish
 - [x] trace annotations for human feedback
-- [ ] before/after verification loop
+- [x] before/after verification loop
 
 ## 0.4 Desktop Capture
 

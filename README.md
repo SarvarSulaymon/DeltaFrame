@@ -123,6 +123,12 @@ Or summarize the newest trace:
 node ./bin/deltaframe.js summarize
 ```
 
+Compare a before/after pair after making UI changes:
+
+```bash
+node ./bin/deltaframe.js compare .deltaframe/traces/before .deltaframe/traces/after --focus "checkout spacing"
+```
+
 ## Output
 
 ```text
@@ -144,6 +150,7 @@ node ./bin/deltaframe.js summarize
 deltaframe watch --url <url> [options]
 deltaframe review [trace-dir]
 deltaframe summarize [trace-dir]
+deltaframe compare <before-trace-dir> <after-trace-dir>
 deltaframe mcp [--trace-root .deltaframe/traces]
 deltaframe doctor [--browser]
 ```
@@ -184,6 +191,7 @@ It exposes tools for:
 - listing states in a trace
 - returning a state image
 - comparing two states
+- comparing before/after traces for verification
 - summarizing a trace
 
 See [docs/MCP.md](docs/MCP.md) for Codex config examples, including a local-checkout config that points at `bin/deltaframe.js`.

@@ -13,9 +13,10 @@ Inputs:
 1. Capture a fresh trace after the change (or confirm one was captured) with
    `deltaframe_capture_url` and `durationMs` short enough for the interaction.
 2. Verify expected visual outcomes:
+   - `deltaframe_compare_traces` with the before trace, after trace, focus, and expectation
    - `deltaframe_summarize_trace` on the new trace
-   - `deltaframe_list_states` to align before/after state IDs
-   - `deltaframe_compare_states` for each expected fix pair
+   - `deltaframe_list_states` if the comparison report needs state-level follow-up
+   - `deltaframe_compare_states` for each expected fix pair that needs pixel-level proof
    - `deltaframe://trace/{encodedTraceDir}/state/{stateId}/diff` for visual proof
 3. Compare the before-trace states for regression risk:
    - unchanged states should remain stable

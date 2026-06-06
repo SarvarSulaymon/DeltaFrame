@@ -5,7 +5,7 @@ import { watchWeb } from "../capture/playwrightWatcher.js";
 import { formatIssueGroup } from "../diagnostics/issues.js";
 import { diffPngBuffers } from "../diff/imageDiff.js";
 import { normalizeMaskRegions } from "../diff/masks.js";
-import { findLatestTraceDir, listTraceDirs, readCuration, readTrace } from "../trace/store.js";
+import { compareTraces, findLatestTraceDir, listTraceDirs, readCuration, readTrace } from "../trace/store.js";
 import { parseViewport } from "../utils/format.js";
 
 const PROTOCOL_VERSION = "2025-06-18";
@@ -230,6 +230,21 @@ class DeltaFrameMcpServer {
             traceDir: { type: "string", description: "Trace directory. Defaults to latest trace." }
           }
         }
+      },
+      {
+        name: "deltaframe_compare_traces",
+        title: "Compare Before/After Traces",
+        description: "Compare a before trace and an after trace to verify whether a focused UI change landed.",
+        inputSchema: {
+          type: "object",
+          required: ["beforeTraceDir", "afterTraceDir"],
+          properties: {
+            beforeTraceDir: { type: "string", description: "Trace directory captured before the UI change." },
+            afterTraceDir: { type: "string", description: "Trace directory captured after the UI change." },
+            focus: { type: "string", description: "Optional area or state to focus on while comparing." },
+            expectation: { type: "string", description: "Optional expected visual outcome to include in the report." }
+          }
+        }
       }
     ];
   }
@@ -252,6 +267,8 @@ class DeltaFrameMcpServer {
         return this.toolCompareStates(args);
       case "deltaframe_summarize_trace":
         return this.toolSummarizeTrace(args);
+      case "deltaframe_compare_traces":
+        return this.toolCompareTraces(args);
       default:
         throw new Error(`Unknown DeltaFrame tool: ${name}`);
     }
@@ -389,6 +406,22 @@ class DeltaFrameMcpServer {
     const trace = await readTrace(traceDir);
     const curation = await readCuration(traceDir, trace);
     return textResult(buildSummary(traceDir, trace, curation));
+  }
+
+  async toolCompareTraces(args) {
+    if (!args.beforeTraceDir || typeof args.beforeTraceDir !== "string") {
+      throw new Error("deltaframe_compare_traces requires a string beforeTraceDir.");
+    }
+    if (!args.afterTraceDir || typeof args.afterTraceDir !== "string") {
+      throw new Error("deltaframe_compare_traces requires a string afterTraceDir.");
+    }
+
+    const beforeTraceDir = await this.resolveTraceDir(args.beforeTraceDir);
+    const afterTraceDir = await this.resolveTraceDir(args.afterTraceDir);
+    return jsonResult(await compareTraces(beforeTraceDir, afterTraceDir, {
+      focus: stringOption(args.focus),
+      expectation: stringOption(args.expectation)
+    }));
   }
 
   async listResources() {

@@ -28,7 +28,86 @@ test("MCP initialize and tools/list advertise DeltaFrame tools", async () => {
   assert.equal(toolNames.includes("deltaframe_capture_url"), true);
   assert.equal(toolNames.includes("deltaframe_latest_trace"), true);
   assert.equal(toolNames.includes("deltaframe_review_trace"), true);
+  assert.equal(toolNames.includes("deltaframe_compare_traces"), true);
   assert.equal(client.stderr.join(""), "");
+});
+
+test("MCP deltaframe_compare_traces returns a structured before/after report", async () => {
+  const traceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "deltaframe-mcp-compare-"));
+  const beforeTraceDir = await writeFixtureTrace(traceRoot, {
+    dirName: "before-trace",
+    name: "Before Trace"
+  });
+  const afterTraceDir = await writeFixtureTrace(traceRoot, {
+    dirName: "after-trace",
+    name: "After Trace",
+    states: [
+      {
+        id: "0001",
+        label: "initial",
+        timestampMs: 0,
+        url: "http://localhost:3000/",
+        image: "frames/0001.png"
+      },
+      {
+        id: "0002",
+        label: "changed",
+        route: "/settings",
+        timestampMs: 500,
+        url: "http://localhost:3000/settings",
+        image: "frames/0002.png",
+        diffFromPrevious: "diffs/0002.png",
+        metrics: { ratio: 0.05 }
+      },
+      {
+        id: "0003",
+        label: "saved",
+        route: "/settings/saved",
+        timestampMs: 900,
+        url: "http://localhost:3000/settings/saved",
+        image: "frames/0003.png",
+        diffFromPrevious: "diffs/0003.png",
+        metrics: { ratio: 0.02 }
+      }
+    ],
+    curation: {
+      version: 1,
+      updatedAt: "2026-06-07T08:05:00.000Z",
+      ignoredIds: [],
+      annotations: {
+        "0002": "Spacing is improved."
+      }
+    }
+  });
+  const client = startMcpClient(traceRoot);
+
+  try {
+    const response = await client.request({
+      method: "tools/call",
+      params: {
+        name: "deltaframe_compare_traces",
+        arguments: {
+          beforeTraceDir,
+          afterTraceDir,
+          focus: "settings spacing",
+          expectation: "spacing is improved"
+        }
+      }
+    });
+    const comparison = JSON.parse(response.result.content[0].text);
+
+    assert.equal(comparison.focus, "settings spacing");
+    assert.equal(comparison.expectation, "spacing is improved");
+    assert.equal(comparison.counts.beforeStates, 2);
+    assert.equal(comparison.counts.afterStates, 3);
+    assert.equal(comparison.counts.matchedStates, 2);
+    assert.equal(comparison.counts.changedStates, 1);
+    assert.equal(comparison.counts.addedStates, 1);
+    assert.equal(comparison.changedStates[0].changes.some((change) => change.field === "changedRatio"), true);
+    assert.match(comparison.markdown, /Before\/After Verification/);
+  } finally {
+    client.close();
+  }
 });
 
 test("MCP resources/list includes trace summary and state index resources", async () => {
@@ -283,41 +362,48 @@ test("MCP rejects state image symlinks that escape the trace directory", async (
 
 const FIXTURE_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
 
-async function writeFixtureTrace(traceRoot) {
-  const traceDir = path.join(traceRoot, "fixture-trace");
+async function writeFixtureTrace(traceRoot, options = {}) {
+  const traceDir = path.join(traceRoot, options.dirName || "fixture-trace");
   await fs.mkdir(path.join(traceDir, "frames"), { recursive: true });
   await fs.mkdir(path.join(traceDir, "diffs"), { recursive: true });
-  await fs.writeFile(path.join(traceDir, "frames", "0001.png"), Buffer.from(FIXTURE_PNG_BASE64, "base64"));
-  await fs.writeFile(path.join(traceDir, "frames", "0002.png"), Buffer.from(FIXTURE_PNG_BASE64, "base64"));
-  await fs.writeFile(path.join(traceDir, "diffs", "0002.png"), Buffer.from(FIXTURE_PNG_BASE64, "base64"));
+  const states = options.states || [
+    {
+      id: "0001",
+      label: "initial",
+      timestampMs: 0,
+      url: "http://localhost:3000/",
+      image: "frames/0001.png"
+    },
+    {
+      id: "0002",
+      label: "changed",
+      route: "/settings",
+      timestampMs: 500,
+      url: "http://localhost:3000/settings",
+      image: "frames/0002.png",
+      diffFromPrevious: "diffs/0002.png",
+      metrics: { ratio: 0.124 }
+    }
+  ];
+  for (const state of states) {
+    if (state.image) {
+      await writeFixturePng(path.join(traceDir, state.image));
+    }
+    if (state.diffFromPrevious) {
+      await writeFixturePng(path.join(traceDir, state.diffFromPrevious));
+    }
+  }
   await fs.writeFile(
     path.join(traceDir, "trace.json"),
     `${JSON.stringify(fixtureTrace({
-      states: [
-        {
-          id: "0001",
-          label: "initial",
-          timestampMs: 0,
-          url: "http://localhost:3000/",
-          image: "frames/0001.png"
-        },
-        {
-          id: "0002",
-          label: "changed",
-          route: "/settings",
-          timestampMs: 500,
-          url: "http://localhost:3000/settings",
-          image: "frames/0002.png",
-          diffFromPrevious: "diffs/0002.png",
-          metrics: { ratio: 0.124 }
-        }
-      ]
+      name: options.name,
+      states
     }), null, 2)}\n`,
     "utf8"
   );
   await fs.writeFile(
     path.join(traceDir, "curation.json"),
-    `${JSON.stringify({
+    `${JSON.stringify(options.curation || {
       version: 1,
       updatedAt: "2026-06-07T08:00:00.000Z",
       ignoredIds: [],
@@ -328,6 +414,11 @@ async function writeFixtureTrace(traceRoot) {
     "utf8"
   );
   return traceDir;
+}
+
+async function writeFixturePng(file) {
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.writeFile(file, Buffer.from(FIXTURE_PNG_BASE64, "base64"));
 }
 
 function traceResourceBase(traceDir) {
@@ -371,10 +462,10 @@ function startMcpClient(traceRoot) {
   };
 }
 
-function fixtureTrace({ states = [] } = {}) {
+function fixtureTrace({ name = "Fixture Trace", states = [] } = {}) {
   return {
     version: "0.1.0",
-    name: "Fixture Trace",
+    name,
     createdAt: "2026-06-06T10:00:00.000Z",
     source: {
       type: "web",

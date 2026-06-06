@@ -5,7 +5,7 @@ import { createTerminalCaptureControl } from "./capture/terminalControls.js";
 import { normalizeMaskRegions } from "./diff/masks.js";
 import { startMcpServer } from "./mcp/server.js";
 import { startReviewServer } from "./review/server.js";
-import { findLatestTraceDir, readTrace } from "./trace/store.js";
+import { compareTraces, findLatestTraceDir, readTrace } from "./trace/store.js";
 import { parseArgs } from "./utils/args.js";
 import { loadPackage, packageAvailable } from "./utils/deps.js";
 import { parseViewport } from "./utils/format.js";
@@ -40,6 +40,11 @@ export async function main(argv) {
 
   if (command === "summarize") {
     await runSummarize(parsed);
+    return;
+  }
+
+  if (command === "compare") {
+    await runCompare(parsed);
     return;
   }
 
@@ -116,6 +121,25 @@ async function runSummarize(parsed) {
   } catch {
     console.log(`# ${trace.name}\n\n${trace.states.length} state(s) captured in ${traceDir}.`);
   }
+}
+
+async function runCompare(parsed) {
+  const [beforeTraceDir, afterTraceDir] = parsed.positionals;
+  if (!beforeTraceDir || !afterTraceDir) {
+    throw new Error("Missing trace directories. Example: deltaframe compare <before-trace-dir> <after-trace-dir>");
+  }
+
+  const comparison = await compareTraces(beforeTraceDir, afterTraceDir, {
+    focus: parsed.flags.focus,
+    expectation: parsed.flags.expectation || parsed.flags.expectations
+  });
+
+  if (parsed.flags.json) {
+    console.log(JSON.stringify(comparison, null, 2));
+    return;
+  }
+
+  console.log(comparison.markdown);
 }
 
 async function runDoctor(flags = {}) {
@@ -211,6 +235,7 @@ Usage:
   deltaframe watch --url <url> [options]
   deltaframe review [trace-dir] [--port 7799]
   deltaframe summarize [trace-dir]
+  deltaframe compare <before-trace-dir> <after-trace-dir> [--focus text] [--expectation text]
   deltaframe mcp [--trace-root .deltaframe/traces]
   deltaframe doctor [--browser] [--channel chrome]
 
@@ -237,6 +262,7 @@ Examples:
   deltaframe watch --url http://localhost:3000 --name landing-flow --headed
   deltaframe watch --url http://localhost:3000 --mask '[{"x":0,"y":0,"width":160,"height":40,"label":"clock"}]'
   deltaframe review .deltaframe/traces/2026-06-06-landing-flow
+  deltaframe compare .deltaframe/traces/before .deltaframe/traces/after --focus header
   deltaframe mcp --trace-root .deltaframe/traces
 `);
 }

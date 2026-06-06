@@ -101,6 +101,24 @@ deltaframe summarize
 deltaframe summarize .deltaframe/traces/2026-06-06-landing-flow
 ```
 
+## `compare`
+
+Compare a trace captured before a UI change with a trace captured after the change.
+
+```bash
+deltaframe compare .deltaframe/traces/before-flow .deltaframe/traces/after-flow --focus "settings button spacing"
+```
+
+By default, DeltaFrame prints a Markdown verification summary. Use `--json` when an agent or script needs the structured comparison payload.
+
+Options:
+
+| Option | Default | Description |
+| --- | ---: | --- |
+| `--focus` | none | Area, state, or component to emphasize in the report. |
+| `--expectation` | none | Expected visual outcome to include in the report. |
+| `--json` | `false` | Print the full structured comparison JSON instead of Markdown. |
+
 ## `mcp`
 
 Start the DeltaFrame MCP stdio server.
@@ -111,7 +129,7 @@ deltaframe mcp --trace-root .deltaframe/traces
 
 The MCP server writes only JSON-RPC messages to stdout. Diagnostics go to stderr.
 
-MCP tools can capture a URL, find the latest trace, return a review command, list traces and states, fetch state images, compare states, and summarize traces. See [MCP.md](MCP.md) for tool schemas.
+MCP tools can capture a URL, find the latest trace, return a review command, list traces and states, fetch state images, compare states, compare before/after traces, and summarize traces. See [MCP.md](MCP.md) for tool schemas.
 
 ## `doctor`
 

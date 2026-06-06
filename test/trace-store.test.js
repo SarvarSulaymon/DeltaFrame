@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
+  compareTraces,
   createTraceDir,
   exportCuratedTrace,
   findLatestTraceDir,
@@ -206,6 +207,77 @@ test("exportCuratedTrace rejects referenced files outside the trace directory", 
     exportCuratedTrace(traceDir),
     /state image must stay inside the trace directory/
   );
+});
+
+test("compareTraces summarizes before and after trace changes", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "deltaframe-compare-"));
+  const beforeDir = path.join(root, "before-trace");
+  const afterDir = path.join(root, "after-trace");
+  await fs.mkdir(path.join(beforeDir, "frames"), { recursive: true });
+  await fs.mkdir(path.join(beforeDir, "diffs"), { recursive: true });
+  await fs.mkdir(path.join(afterDir, "frames"), { recursive: true });
+  await fs.mkdir(path.join(afterDir, "diffs"), { recursive: true });
+
+  for (const file of [
+    path.join(beforeDir, "frames", "0001.png"),
+    path.join(beforeDir, "frames", "0002.png"),
+    path.join(beforeDir, "diffs", "0001-0002.png"),
+    path.join(afterDir, "frames", "0001.png"),
+    path.join(afterDir, "frames", "0002.png"),
+    path.join(afterDir, "frames", "0003.png"),
+    path.join(afterDir, "diffs", "0001-0002.png"),
+    path.join(afterDir, "diffs", "0002-0003.png")
+  ]) {
+    await fs.writeFile(file, "png");
+  }
+
+  const beforeTrace = fixtureTrace({
+    name: "Before Flow",
+    createdAt: "2026-06-06T15:00:00.000Z"
+  });
+  beforeTrace.states[1].route = "/settings";
+  const afterTrace = fixtureTraceWithThreeStates();
+  afterTrace.name = "After Flow";
+  afterTrace.createdAt = "2026-06-06T15:10:00.000Z";
+  afterTrace.states[1].route = "/settings";
+  afterTrace.states[1].metrics = { ratio: 0.1 };
+  afterTrace.states[2].route = "/settings/saved";
+
+  await writeTrace(beforeDir, beforeTrace);
+  await writeTrace(afterDir, afterTrace);
+  await writeCuration(beforeDir, {
+    annotations: { "0002": "Button spacing is too loose." }
+  });
+  await writeCuration(afterDir, {
+    annotations: { "0002": "Button spacing is tightened." }
+  });
+
+  const comparison = await compareTraces(beforeDir, afterDir, {
+    generatedAt: "2026-06-06T15:15:00.000Z",
+    focus: "settings button spacing",
+    expectation: "settings button spacing is tighter"
+  });
+
+  assert.equal(comparison.focus, "settings button spacing");
+  assert.equal(comparison.expectation, "settings button spacing is tighter");
+  assert.equal(comparison.counts.beforeStates, 2);
+  assert.equal(comparison.counts.afterStates, 3);
+  assert.equal(comparison.counts.matchedStates, 2);
+  assert.equal(comparison.counts.changedStates, 1);
+  assert.equal(comparison.counts.addedStates, 1);
+  assert.equal(comparison.counts.removedStates, 0);
+  assert.equal(comparison.counts.annotationChanges, 1);
+  assert.equal(comparison.changedStates[0].before.id, "0002");
+  assert.equal(comparison.changedStates[0].before.imagePresent, true);
+  assert.equal(comparison.changedStates[0].after.changedRatio, 0.1);
+  assert.deepEqual(
+    comparison.changedStates[0].changes.map((change) => change.field),
+    ["changedRatio", "annotation"]
+  );
+  assert.equal(comparison.addedStates[0].id, "0003");
+  assert.match(comparison.markdown, /Before\/After Verification/);
+  assert.match(comparison.markdown, /settings button spacing/);
+  assert.match(comparison.markdown, /Added States/);
 });
 
 function fixtureTrace({ name, createdAt }) {

@@ -70,6 +70,7 @@ Use `deltaframe_get_state_image` and `deltaframe_compare_states` as needed for e
 
 Use `deltaframe_capture_url` (or existing workflow) to get a fresh post-change trace and compare with prior:
 
+- `deltaframe_compare_traces` with `beforeTraceDir`, `afterTraceDir`, `focus`, and `expectation`
 - `deltaframe://trace/{encodedTraceDir}/state/{{STATE_ID}}/image`
 - `deltaframe://trace/{encodedTraceDir}/state/{{STATE_ID}}/diff`
 

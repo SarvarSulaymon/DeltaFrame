@@ -169,6 +169,61 @@ export async function exportCuratedTrace(traceDir, options = {}) {
   }
 }
 
+export async function compareTraces(beforeTraceDir, afterTraceDir, options = {}) {
+  const beforeDir = path.resolve(beforeTraceDir);
+  const afterDir = path.resolve(afterTraceDir);
+  const [beforeTrace, afterTrace] = await Promise.all([
+    readTrace(beforeDir),
+    readTrace(afterDir)
+  ]);
+  const [beforeCuration, afterCuration] = await Promise.all([
+    readCuration(beforeDir, beforeTrace),
+    readCuration(afterDir, afterTrace)
+  ]);
+  const [beforeStates, afterStates] = await Promise.all([
+    comparableStates(beforeDir, beforeTrace, beforeCuration),
+    comparableStates(afterDir, afterTrace, afterCuration)
+  ]);
+  const matches = matchComparableStates(beforeStates, afterStates);
+  const matchedStates = matches.pairs.map(({ key, before, after }) => ({
+    key,
+    before,
+    after,
+    changes: compareComparableState(before, after)
+  }));
+  const changedStates = matchedStates.filter((match) => match.changes.length > 0);
+  const addedStates = [...matches.unmatchedAfter].map((index) => afterStates[index]);
+  const removedStates = [...matches.unmatchedBefore].map((index) => beforeStates[index]);
+  const comparison = {
+    version: 1,
+    generatedAt: options.generatedAt || new Date().toISOString(),
+    focus: cleanOptionalText(options.focus),
+    expectation: cleanOptionalText(options.expectation ?? options.expectations),
+    before: traceComparisonMetadata(beforeDir, beforeTrace, beforeCuration),
+    after: traceComparisonMetadata(afterDir, afterTrace, afterCuration),
+    counts: {
+      beforeStates: beforeStates.length,
+      afterStates: afterStates.length,
+      matchedStates: matchedStates.length,
+      changedStates: changedStates.length,
+      unchangedStates: matchedStates.length - changedStates.length,
+      addedStates: addedStates.length,
+      removedStates: removedStates.length,
+      beforeAnnotations: Object.keys(beforeCuration.annotations || {}).length,
+      afterAnnotations: Object.keys(afterCuration.annotations || {}).length,
+      annotationChanges: changedStates.reduce((total, match) => (
+        total + (match.changes.some((change) => change.field === "annotation") ? 1 : 0)
+      ), 0)
+    },
+    matchedStates,
+    changedStates,
+    addedStates,
+    removedStates
+  };
+  comparison.markdown = buildTraceComparisonMarkdown(comparison);
+  return comparison;
+}
+
 export async function writeSummary(traceDir, trace) {
   const lines = [];
   lines.push(`# ${trace.name}`);
@@ -270,6 +325,233 @@ export async function listTraceDirs(root = ".deltaframe/traces") {
 
 export function relativeTracePath(traceDir, filePath) {
   return toPosixPath(path.relative(traceDir, filePath));
+}
+
+async function comparableStates(traceDir, trace, curation) {
+  return Promise.all((trace.states || []).map((state) => comparableState(traceDir, state, curation)));
+}
+
+async function comparableState(traceDir, state, curation) {
+  return {
+    id: state.id,
+    label: state.label || "",
+    route: state.route || null,
+    url: state.url || null,
+    timestampMs: state.timestampMs ?? null,
+    image: state.image || null,
+    imagePresent: state.image ? await traceRelativeFileExists(traceDir, state.image, "state image") : false,
+    diffFromPrevious: state.diffFromPrevious || null,
+    diffPresent: state.diffFromPrevious ? await traceRelativeFileExists(traceDir, state.diffFromPrevious, "state diff") : false,
+    changedRatio: typeof state.metrics?.ratio === "number" ? state.metrics.ratio : null,
+    annotation: curation.annotations?.[state.id] || null,
+    issueCount: state.issues?.length || 0,
+    consoleCount: state.console?.length || 0,
+    networkCount: state.network?.length || 0
+  };
+}
+
+async function traceRelativeFileExists(traceDir, relativeFile, label) {
+  if (!relativeFile || typeof relativeFile !== "string" || path.isAbsolute(relativeFile)) {
+    return false;
+  }
+  const resolved = path.resolve(traceDir, relativeFile);
+  assertPathInside(traceDir, resolved, label);
+  return await exists(resolved);
+}
+
+function traceComparisonMetadata(traceDir, trace, curation) {
+  const states = trace.states || [];
+  return {
+    traceDir,
+    name: trace.name,
+    version: trace.version,
+    createdAt: trace.createdAt,
+    source: {
+      type: trace.source?.type,
+      url: trace.source?.url,
+      finalUrl: trace.source?.finalUrl,
+      viewport: trace.source?.viewport || null,
+      fullPage: Boolean(trace.source?.fullPage)
+    },
+    stateCount: states.length,
+    keptStateCount: curation.counts?.kept ?? states.length,
+    ignoredStateCount: curation.counts?.ignored ?? 0,
+    annotationCount: Object.keys(curation.annotations || {}).length,
+    issueGroupCount: states.reduce((total, state) => total + (state.issues?.length || 0), 0)
+  };
+}
+
+function matchComparableStates(beforeStates, afterStates) {
+  const unmatchedBefore = new Set(beforeStates.map((_, index) => index));
+  const unmatchedAfter = new Set(afterStates.map((_, index) => index));
+  const pairs = [];
+  const strategies = [
+    ["id", (state) => state.id ? `id:${state.id}` : null],
+    ["route-label", (state) => state.route && state.label ? `route:${state.route}|label:${state.label}` : null],
+    ["url-label", (state) => state.url && state.label ? `url:${state.url}|label:${state.label}` : null],
+    ["label", (state) => state.label ? `label:${state.label}` : null]
+  ];
+
+  for (const [strategy, keyForState] of strategies) {
+    const beforeByKey = uniqueStateKeyMap(beforeStates, unmatchedBefore, keyForState);
+    const afterByKey = uniqueStateKeyMap(afterStates, unmatchedAfter, keyForState);
+    for (const [key, beforeIndex] of beforeByKey) {
+      if (!afterByKey.has(key)) continue;
+      const afterIndex = afterByKey.get(key);
+      pairs.push({
+        key: `${strategy}:${key}`,
+        before: beforeStates[beforeIndex],
+        after: afterStates[afterIndex]
+      });
+      unmatchedBefore.delete(beforeIndex);
+      unmatchedAfter.delete(afterIndex);
+    }
+  }
+
+  return { pairs, unmatchedBefore, unmatchedAfter };
+}
+
+function uniqueStateKeyMap(states, unmatched, keyForState) {
+  const byKey = new Map();
+  const duplicateKeys = new Set();
+
+  for (const index of unmatched) {
+    const key = keyForState(states[index]);
+    if (!key) continue;
+    if (byKey.has(key)) {
+      duplicateKeys.add(key);
+      continue;
+    }
+    byKey.set(key, index);
+  }
+
+  for (const key of duplicateKeys) {
+    byKey.delete(key);
+  }
+  return byKey;
+}
+
+function compareComparableState(before, after) {
+  const changes = [];
+  addFieldChange(changes, "label", before.label, after.label);
+  addFieldChange(changes, "route", before.route, after.route);
+  addFieldChange(changes, "url", before.url, after.url);
+  addFieldChange(changes, "imagePresent", before.imagePresent, after.imagePresent);
+  addFieldChange(changes, "diffPresent", before.diffPresent, after.diffPresent);
+  addRatioChange(changes, before.changedRatio, after.changedRatio);
+  addFieldChange(changes, "annotation", before.annotation, after.annotation);
+  addFieldChange(changes, "issueCount", before.issueCount, after.issueCount);
+  addFieldChange(changes, "consoleCount", before.consoleCount, after.consoleCount);
+  addFieldChange(changes, "networkCount", before.networkCount, after.networkCount);
+  return changes;
+}
+
+function addFieldChange(changes, field, before, after) {
+  if (before === after) return;
+  changes.push({ field, before, after });
+}
+
+function addRatioChange(changes, before, after) {
+  if (before === after || (typeof before === "number" && typeof after === "number" && Math.abs(before - after) < 0.000001)) {
+    return;
+  }
+  changes.push({
+    field: "changedRatio",
+    before,
+    after,
+    delta: typeof before === "number" && typeof after === "number" ? after - before : null
+  });
+}
+
+function buildTraceComparisonMarkdown(comparison) {
+  const lines = [];
+  lines.push("# DeltaFrame Before/After Verification");
+  lines.push("");
+  lines.push(`- Before: ${comparison.before.name} (\`${comparison.before.traceDir}\`)`);
+  lines.push(`- After: ${comparison.after.name} (\`${comparison.after.traceDir}\`)`);
+  if (comparison.focus) {
+    lines.push(`- Focus: ${comparison.focus}`);
+  }
+  if (comparison.expectation) {
+    lines.push(`- Expectation: ${comparison.expectation}`);
+  }
+  lines.push("");
+  lines.push("## Summary");
+  lines.push("");
+  lines.push(`- States: ${comparison.counts.beforeStates} before, ${comparison.counts.afterStates} after`);
+  lines.push(`- Matched states: ${comparison.counts.matchedStates}`);
+  lines.push(`- Changed matched states: ${comparison.counts.changedStates}`);
+  lines.push(`- Added states: ${comparison.counts.addedStates}`);
+  lines.push(`- Removed states: ${comparison.counts.removedStates}`);
+  lines.push(`- Annotation changes: ${comparison.counts.annotationChanges}`);
+
+  if (comparison.changedStates.length) {
+    lines.push("");
+    lines.push("## Changed States");
+    lines.push("");
+    for (const match of comparison.changedStates) {
+      lines.push(`- ${stateTitle(match.before)} -> ${stateTitle(match.after)}`);
+      for (const change of match.changes) {
+        lines.push(`  - ${formatChange(change)}`);
+      }
+    }
+  }
+
+  if (comparison.addedStates.length) {
+    lines.push("");
+    lines.push("## Added States");
+    lines.push("");
+    for (const state of comparison.addedStates) {
+      lines.push(`- ${stateTitle(state)}`);
+    }
+  }
+
+  if (comparison.removedStates.length) {
+    lines.push("");
+    lines.push("## Removed States");
+    lines.push("");
+    for (const state of comparison.removedStates) {
+      lines.push(`- ${stateTitle(state)}`);
+    }
+  }
+
+  lines.push("");
+  lines.push("## Notes");
+  lines.push("");
+  lines.push("- This is a deterministic trace metadata comparison, not a visual quality verdict.");
+  lines.push("- Use changed, added, and removed state rows to decide which screenshots or diffs need human/Codex inspection.");
+  return lines.join("\n");
+}
+
+function stateTitle(state) {
+  const route = state.route ? ` route ${state.route}` : "";
+  const changed = typeof state.changedRatio === "number" ? `, changed ${(state.changedRatio * 100).toFixed(3)}%` : "";
+  return `${state.id} ${state.label}${route}${changed}`;
+}
+
+function formatChange(change) {
+  if (change.field === "changedRatio") {
+    const before = formatRatio(change.before);
+    const after = formatRatio(change.after);
+    const delta = typeof change.delta === "number" ? ` (${formatRatio(change.delta)} delta)` : "";
+    return `changedRatio: ${before} -> ${after}${delta}`;
+  }
+  return `${change.field}: ${formatValue(change.before)} -> ${formatValue(change.after)}`;
+}
+
+function formatRatio(value) {
+  return typeof value === "number" ? `${(value * 100).toFixed(3)}%` : "none";
+}
+
+function formatValue(value) {
+  if (value === null || value === undefined || value === "") return "none";
+  return String(value);
+}
+
+function cleanOptionalText(value) {
+  if (value === undefined || value === null || value === "") return null;
+  const text = String(value).trim();
+  return text || null;
 }
 
 function normalizeIgnoredIds(input, stateIds) {

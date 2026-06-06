@@ -187,6 +187,31 @@ Input:
 }
 ```
 
+### `deltaframe_compare_traces`
+
+Compares a trace captured before a UI change with a trace captured after the change. The result is metadata-first and deterministic: it matches states by stable signals, reports changed/added/removed states, includes annotation changes, and returns a Markdown verification summary for agents.
+
+Input:
+
+```json
+{
+  "beforeTraceDir": ".deltaframe/traces/before-flow",
+  "afterTraceDir": ".deltaframe/traces/after-flow",
+  "focus": "settings button spacing",
+  "expectation": "settings spacing is tighter without new overlap"
+}
+```
+
+Returns JSON text with:
+
+- `before` and `after` trace metadata
+- `counts`
+- `matchedStates`
+- `changedStates`
+- `addedStates`
+- `removedStates`
+- `markdown`
+
 ### `deltaframe_summarize_trace`
 
 Returns a compact text summary of the trace.
