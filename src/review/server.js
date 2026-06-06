@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
-import { readTrace } from "../trace/store.js";
+import { exportCuratedTrace, readCuration, readTrace, writeCuration } from "../trace/store.js";
 
 export async function startReviewServer({ traceDir, port }) {
   const absoluteTraceDir = path.resolve(traceDir);
@@ -22,15 +22,44 @@ export async function startReviewServer({ traceDir, port }) {
         return;
       }
 
+      if (url.pathname === "/curation" && request.method === "GET") {
+        sendJson(response, 200, await readCuration(absoluteTraceDir, trace));
+        return;
+      }
+
+      if (url.pathname === "/curation" && request.method === "PUT") {
+        const body = await readJsonBody(request);
+        sendJson(response, 200, await writeCuration(absoluteTraceDir, body, trace));
+        return;
+      }
+
+      if (url.pathname === "/export" && request.method === "POST") {
+        const result = await exportCuratedTrace(absoluteTraceDir);
+        sendJson(response, 201, {
+          traceDir: result.traceDir,
+          stateCount: result.trace.states.length,
+          curation: result.curation
+        });
+        return;
+      }
+
       if (url.pathname.startsWith("/file/")) {
         const relative = decodeURIComponent(url.pathname.slice("/file/".length));
         const target = path.resolve(absoluteTraceDir, relative);
-        if (!target.startsWith(absoluteTraceDir)) {
+        if (!isPathInside(absoluteTraceDir, target)) {
           send(response, 403, "text/plain; charset=utf-8", "Forbidden");
           return;
         }
-        const body = await fs.readFile(target);
-        send(response, 200, contentType(target), body);
+
+        const realTraceDir = await fs.realpath(absoluteTraceDir);
+        const realTarget = await fs.realpath(target);
+        if (!isPathInside(realTraceDir, realTarget)) {
+          send(response, 403, "text/plain; charset=utf-8", "Forbidden");
+          return;
+        }
+
+        const body = await fs.readFile(realTarget);
+        send(response, 200, contentType(realTarget), body);
         return;
       }
 
@@ -61,6 +90,30 @@ function send(response, status, type, body) {
   response.end(body);
 }
 
+function sendJson(response, status, body) {
+  send(response, status, "application/json; charset=utf-8", `${JSON.stringify(body, null, 2)}\n`);
+}
+
+async function readJsonBody(request) {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of request) {
+    size += chunk.length;
+    if (size > 64 * 1024) {
+      throw new Error("Request body is too large");
+    }
+    chunks.push(chunk);
+  }
+
+  if (!chunks.length) return {};
+  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+}
+
+function isPathInside(parent, target) {
+  const relative = path.relative(parent, target);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
 function contentType(filePath) {
   if (filePath.endsWith(".png")) return "image/png";
   if (filePath.endsWith(".json")) return "application/json; charset=utf-8";
@@ -85,7 +138,7 @@ function buildHtml(initialTrace) {
       --muted: #687277;
       --line: #d9dedc;
       --accent: #0b6f6a;
-      --accent-2: #b4463a;
+      --ignored: #8a4f45;
     }
     * { box-sizing: border-box; }
     body {
@@ -105,6 +158,46 @@ function buildHtml(initialTrace) {
     }
     h1 { margin: 0; font-size: 22px; line-height: 1.2; }
     .sub { color: var(--muted); margin-top: 6px; font-size: 14px; }
+    .topline {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+    }
+    .actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    button.action {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--panel);
+      color: var(--ink);
+      min-height: 34px;
+      padding: 7px 11px;
+      font: inherit;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    button.action.primary {
+      border-color: var(--accent);
+      background: var(--accent);
+      color: #fff;
+    }
+    button.action:disabled {
+      color: var(--muted);
+      cursor: wait;
+      opacity: 0.75;
+    }
+    .status-line {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }
     main {
       display: grid;
       grid-template-columns: 320px minmax(0, 1fr);
@@ -135,9 +228,25 @@ function buildHtml(initialTrace) {
       cursor: pointer;
     }
     button.state.active { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(11, 111, 106, 0.16); }
+    button.state.ignored { opacity: 0.62; }
+    button.state.ignored .state-title { text-decoration: line-through; }
     button.state img { width: 54px; height: 38px; object-fit: cover; border: 1px solid var(--line); border-radius: 4px; }
     .state-title { font-weight: 650; font-size: 13px; overflow-wrap: anywhere; }
     .state-meta { color: var(--muted); font-size: 12px; margin-top: 3px; }
+    .pill {
+      display: inline-block;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 1px 7px 2px;
+      margin-left: 6px;
+      font-size: 11px;
+      color: var(--accent);
+      background: #eef7f5;
+    }
+    .pill.ignored {
+      color: var(--ignored);
+      background: #fbefec;
+    }
     .viewer {
       display: grid;
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -191,8 +300,15 @@ function buildHtml(initialTrace) {
 </head>
 <body>
   <header>
-    <h1>DeltaFrame Review</h1>
+    <div class="topline">
+      <h1>DeltaFrame Review</h1>
+      <div class="actions">
+        <button class="action" id="toggleState" type="button">Ignore State</button>
+        <button class="action primary" id="exportTrace" type="button">Export Kept</button>
+      </div>
+    </div>
     <div class="sub" id="traceSub"></div>
+    <div class="status-line" id="statusLine"></div>
   </header>
   <main>
     <aside id="states"></aside>
@@ -201,10 +317,21 @@ function buildHtml(initialTrace) {
   <script>
     const trace = ${encodedTrace};
     let selected = 0;
+    let curation = {
+      keptIds: trace.states.map((state) => state.id),
+      ignoredIds: [],
+      counts: { kept: trace.states.length, ignored: 0, total: trace.states.length }
+    };
+    let busy = false;
     const statesEl = document.getElementById("states");
     const detailsEl = document.getElementById("details");
-    document.getElementById("traceSub").textContent =
-      trace.name + " · " + trace.states.length + " states · " + trace.source.url;
+    const traceSubEl = document.getElementById("traceSub");
+    const statusLineEl = document.getElementById("statusLine");
+    const toggleStateEl = document.getElementById("toggleState");
+    const exportTraceEl = document.getElementById("exportTrace");
+
+    toggleStateEl.onclick = () => toggleSelectedState();
+    exportTraceEl.onclick = () => exportKeptTrace();
 
     function fileUrl(path) {
       return "/file/" + encodeURIComponent(path).replaceAll("%2F", "/");
@@ -214,15 +341,43 @@ function buildHtml(initialTrace) {
       return value == null ? "n/a" : (value * 100).toFixed(3) + "%";
     }
 
+    function ignoredSet() {
+      return new Set(curation.ignoredIds || []);
+    }
+
+    function selectedState() {
+      return trace.states[selected];
+    }
+
+    function isIgnored(state) {
+      return ignoredSet().has(state.id);
+    }
+
+    function renderHeader() {
+      const counts = curation.counts || {
+        kept: trace.states.length - (curation.ignoredIds || []).length,
+        ignored: (curation.ignoredIds || []).length,
+        total: trace.states.length
+      };
+      traceSubEl.textContent =
+        trace.name + " - " + counts.kept + " kept / " + counts.ignored + " ignored - " + trace.source.url;
+      const state = selectedState();
+      toggleStateEl.textContent = isIgnored(state) ? "Keep State" : "Ignore State";
+      exportTraceEl.disabled = busy || counts.kept === 0;
+      toggleStateEl.disabled = busy;
+    }
+
     function renderList() {
       statesEl.innerHTML = "";
       trace.states.forEach((state, index) => {
+        const ignored = isIgnored(state);
         const button = document.createElement("button");
-        button.className = "state" + (index === selected ? " active" : "");
+        button.className = "state" + (index === selected ? " active" : "") + (ignored ? " ignored" : "");
         button.innerHTML =
           '<img src="' + fileUrl(state.image) + '" alt="">' +
           '<div><div class="state-title">' + state.id + " " + escapeHtml(state.label) + '</div>' +
-          '<div class="state-meta">' + state.timestampMs + 'ms · ' + pct(state.metrics && state.metrics.ratio) + '</div></div>';
+          '<div class="state-meta">' + state.timestampMs + 'ms - ' + pct(state.metrics && state.metrics.ratio) +
+          '<span class="pill ' + (ignored ? "ignored" : "kept") + '">' + (ignored ? "ignored" : "kept") + '</span></div></div>';
         button.onclick = () => {
           selected = index;
           render();
@@ -232,7 +387,8 @@ function buildHtml(initialTrace) {
     }
 
     function renderDetails() {
-      const state = trace.states[selected];
+      const state = selectedState();
+      const ignored = isIgnored(state);
       const consoleText = state.console?.length
         ? state.console.map((event) => '[' + event.type + ' @ ' + event.timestampMs + 'ms] ' + event.text).join("\\n")
         : "";
@@ -252,6 +408,7 @@ function buildHtml(initialTrace) {
         '</div>' +
         '<dl>' +
           '<dt>ID</dt><dd>' + state.id + '</dd>' +
+          '<dt>Status</dt><dd>' + (ignored ? "ignored" : "kept") + '</dd>' +
           '<dt>Label</dt><dd>' + escapeHtml(state.label) + '</dd>' +
           '<dt>URL</dt><dd>' + escapeHtml(state.url) + '</dd>' +
           '<dt>Changed</dt><dd>' + pct(state.metrics && state.metrics.ratio) + '</dd>' +
@@ -262,8 +419,68 @@ function buildHtml(initialTrace) {
     }
 
     function render() {
+      renderHeader();
       renderList();
       renderDetails();
+    }
+
+    async function loadCuration() {
+      try {
+        const response = await fetch("/curation");
+        if (!response.ok) throw new Error(await response.text());
+        curation = await response.json();
+      } catch (error) {
+        statusLineEl.textContent = "Could not load curation: " + error.message;
+      }
+      render();
+    }
+
+    async function saveCuration(nextIgnoredIds) {
+      busy = true;
+      render();
+      try {
+        const response = await fetch("/curation", {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ ignoredIds: nextIgnoredIds })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        curation = await response.json();
+        statusLineEl.textContent = "Curation saved.";
+      } catch (error) {
+        statusLineEl.textContent = "Could not save curation: " + error.message;
+      } finally {
+        busy = false;
+        render();
+      }
+    }
+
+    function toggleSelectedState() {
+      const state = selectedState();
+      const ignored = ignoredSet();
+      if (ignored.has(state.id)) {
+        ignored.delete(state.id);
+      } else {
+        ignored.add(state.id);
+      }
+      saveCuration(trace.states.map((item) => item.id).filter((id) => ignored.has(id)));
+    }
+
+    async function exportKeptTrace() {
+      busy = true;
+      statusLineEl.textContent = "Exporting kept states...";
+      render();
+      try {
+        const response = await fetch("/export", { method: "POST" });
+        if (!response.ok) throw new Error(await response.text());
+        const result = await response.json();
+        statusLineEl.textContent = "Exported " + result.stateCount + " kept state(s) to " + result.traceDir;
+      } catch (error) {
+        statusLineEl.textContent = "Could not export trace: " + error.message;
+      } finally {
+        busy = false;
+        render();
+      }
     }
 
     function escapeHtml(value) {
@@ -274,7 +491,7 @@ function buildHtml(initialTrace) {
         .replaceAll('"', "&quot;");
     }
 
-    render();
+    loadCuration();
   </script>
 </body>
 </html>`;

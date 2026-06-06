@@ -113,6 +113,8 @@ Review the captured trace:
 node ./bin/deltaframe.js review .deltaframe/traces/<trace-folder>
 ```
 
+In the review UI, use Keep/Ignore to curate noisy states. DeltaFrame saves those choices as `curation.json`, and Export Kept creates a new complete trace folder containing only kept states.
+
 Or summarize the newest trace:
 
 ```bash
@@ -199,7 +201,7 @@ This is an initial MVP scaffold. It is useful enough to start testing against re
 Next priorities:
 
 1. harden the capture loop against animations and hot reloads
-2. add manual keep/ignore export from the review UI
+2. dogfood the MCP proof loop on a real local prototype: capture, curate/export if useful, and have Codex make one concrete UI improvement from the trace
 3. improve labels with route, action, and DOM metadata
 4. add before/after recapture prompts for Codex
 5. add desktop/region capture mode

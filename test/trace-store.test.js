@@ -5,10 +5,13 @@ import path from "node:path";
 import test from "node:test";
 import {
   createTraceDir,
+  exportCuratedTrace,
   findLatestTraceDir,
   listTraceDirs,
+  readCuration,
   readTrace,
   relativeTracePath,
+  writeCuration,
   writeSummary,
   writeTrace
 } from "../src/trace/store.js";
@@ -64,6 +67,95 @@ test("trace store creates unique directories for concurrent captures", async () 
   }
 });
 
+test("trace curation defaults to keep all states and persists ignored states", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "deltaframe-curation-"));
+  const traceDir = await createTraceDir({ outDir: root, name: "Curation Flow" });
+  const trace = fixtureTrace({
+    name: "Curation Flow",
+    createdAt: "2026-06-06T12:00:00.000Z"
+  });
+  await writeTrace(traceDir, trace);
+
+  assert.deepEqual(await readCuration(traceDir), {
+    version: 1,
+    updatedAt: null,
+    keptIds: ["0001", "0002"],
+    ignoredIds: [],
+    counts: { kept: 2, ignored: 0, total: 2 }
+  });
+
+  const curation = await writeCuration(traceDir, { ignoredIds: ["0002"] });
+  assert.equal(curation.counts.kept, 1);
+  assert.deepEqual(curation.keptIds, ["0001"]);
+  assert.deepEqual((await readCuration(traceDir)).ignoredIds, ["0002"]);
+
+  await assert.rejects(
+    writeCuration(traceDir, { ignoredIds: ["missing"] }),
+    /Unknown state id/
+  );
+});
+
+test("exportCuratedTrace writes a complete trace with only kept states", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "deltaframe-export-"));
+  const traceDir = path.join(root, "source-trace");
+  await fs.mkdir(path.join(traceDir, "frames"), { recursive: true });
+  await fs.mkdir(path.join(traceDir, "diffs"), { recursive: true });
+  await fs.writeFile(path.join(traceDir, "frames", "0001.png"), "one");
+  await fs.writeFile(path.join(traceDir, "frames", "0002.png"), "two");
+  await fs.writeFile(path.join(traceDir, "frames", "0003.png"), "three");
+  await fs.writeFile(path.join(traceDir, "diffs", "0001-0002.png"), "diff-12");
+  await fs.writeFile(path.join(traceDir, "diffs", "0002-0003.png"), "diff-23");
+  await writeTrace(traceDir, fixtureTraceWithThreeStates());
+  await writeCuration(traceDir, { ignoredIds: ["0002"] });
+
+  const result = await exportCuratedTrace(traceDir, {
+    exportedAt: "2026-06-06T13:00:00.000Z"
+  });
+  const exported = await readTrace(result.traceDir);
+
+  assert.deepEqual(exported.states.map((state) => state.id), ["0001", "0003"]);
+  assert.equal(exported.states[1].diffFromPrevious, undefined);
+  assert.equal(await exists(path.join(result.traceDir, "trace.json")), true);
+  assert.equal(await exists(path.join(result.traceDir, "summary.md")), true);
+  assert.equal(await exists(path.join(result.traceDir, "frames", "0001.png")), true);
+  assert.equal(await exists(path.join(result.traceDir, "frames", "0003.png")), true);
+  assert.equal(await exists(path.join(result.traceDir, "frames", "0002.png")), false);
+  assert.equal(await exists(path.join(result.traceDir, "diffs", "0002-0003.png")), false);
+  assert.deepEqual(exported.curation, {
+    sourceTracePath: path.resolve(traceDir),
+    exportedAt: "2026-06-06T13:00:00.000Z",
+    keptIds: ["0001", "0003"],
+    ignoredIds: ["0002"]
+  });
+});
+
+test("exportCuratedTrace rejects referenced files outside the trace directory", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "deltaframe-export-path-"));
+  const traceDir = path.join(root, "bad-trace");
+  await fs.mkdir(path.join(traceDir, "frames"), { recursive: true });
+  await fs.writeFile(path.join(root, "outside.png"), "outside");
+  await writeTrace(traceDir, {
+    ...fixtureTrace({
+      name: "Bad Trace",
+      createdAt: "2026-06-06T14:00:00.000Z"
+    }),
+    states: [
+      {
+        id: "0001",
+        label: "bad",
+        timestampMs: 0,
+        url: "http://localhost:3000/",
+        image: "../outside.png"
+      }
+    ]
+  });
+
+  await assert.rejects(
+    exportCuratedTrace(traceDir),
+    /state image must stay inside the trace directory/
+  );
+});
+
 function fixtureTrace({ name, createdAt }) {
   return {
     version: 1,
@@ -96,6 +188,23 @@ function fixtureTrace({ name, createdAt }) {
       }
     ]
   };
+}
+
+function fixtureTraceWithThreeStates() {
+  const trace = fixtureTrace({
+    name: "Export Flow",
+    createdAt: "2026-06-06T12:30:00.000Z"
+  });
+  trace.states.push({
+    id: "0003",
+    label: "final",
+    timestampMs: 240,
+    url: "http://localhost:3000/",
+    image: "frames/0003.png",
+    diffFromPrevious: "diffs/0002-0003.png",
+    metrics: { ratio: 0.1 }
+  });
+  return trace;
 }
 
 async function exists(target) {

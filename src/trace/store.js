@@ -38,6 +38,121 @@ export async function readTrace(traceDir) {
   return JSON.parse(text);
 }
 
+export async function readCuration(traceDir, trace = undefined) {
+  const resolvedTrace = trace || await readTrace(traceDir);
+  const stateIds = new Set((resolvedTrace.states || []).map((state) => state.id));
+  const curationPath = path.join(traceDir, "curation.json");
+  let raw = {};
+
+  if (await exists(curationPath)) {
+    raw = JSON.parse(await fs.readFile(curationPath, "utf8"));
+  }
+
+  const ignoredInput = Array.isArray(raw.ignoredIds)
+    ? raw.ignoredIds
+    : Object.entries(raw.states || {})
+      .filter(([, status]) => status === "ignored")
+      .map(([id]) => id);
+  const ignoredSet = new Set(ignoredInput.filter((id) => stateIds.has(id)));
+  const keptIds = (resolvedTrace.states || [])
+    .map((state) => state.id)
+    .filter((id) => !ignoredSet.has(id));
+  const ignoredIds = (resolvedTrace.states || [])
+    .map((state) => state.id)
+    .filter((id) => ignoredSet.has(id));
+
+  return {
+    version: 1,
+    updatedAt: raw.updatedAt || null,
+    keptIds,
+    ignoredIds,
+    counts: {
+      kept: keptIds.length,
+      ignored: ignoredIds.length,
+      total: stateIds.size
+    }
+  };
+}
+
+export async function writeCuration(traceDir, input, trace = undefined) {
+  const resolvedTrace = trace || await readTrace(traceDir);
+  const stateIds = new Set((resolvedTrace.states || []).map((state) => state.id));
+  const ignoredIds = normalizeIgnoredIds(input, stateIds);
+  const unknownIds = ignoredIds.filter((id) => !stateIds.has(id));
+
+  if (unknownIds.length) {
+    throw new Error(`Unknown state id(s): ${unknownIds.join(", ")}`);
+  }
+
+  const curation = {
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    ignoredIds
+  };
+  await fs.writeFile(
+    path.join(traceDir, "curation.json"),
+    `${JSON.stringify(curation, null, 2)}\n`,
+    "utf8"
+  );
+  return await readCuration(traceDir, resolvedTrace);
+}
+
+export async function exportCuratedTrace(traceDir, options = {}) {
+  const sourceTraceDir = path.resolve(traceDir);
+  const trace = await readTrace(sourceTraceDir);
+  const curation = await readCuration(sourceTraceDir, trace);
+  const keptIds = new Set(curation.keptIds);
+  const ignoredIds = curation.ignoredIds;
+  const outputRoot = options.outDir ? path.resolve(options.outDir) : path.dirname(sourceTraceDir);
+  const exportDir = await createUniqueTraceDir(outputRoot, `${path.basename(sourceTraceDir)}-curated`);
+  const previousById = new Map();
+
+  for (let index = 1; index < (trace.states || []).length; index += 1) {
+    previousById.set(trace.states[index].id, trace.states[index - 1].id);
+  }
+
+  try {
+    const states = [];
+    for (const state of trace.states || []) {
+      if (!keptIds.has(state.id)) continue;
+
+      const nextState = { ...state };
+      await copyTracePng(sourceTraceDir, exportDir, state.image, "state image");
+
+      const previousId = previousById.get(state.id);
+      if (state.diffFromPrevious && previousId && keptIds.has(previousId)) {
+        await copyTracePng(sourceTraceDir, exportDir, state.diffFromPrevious, "state diff");
+      } else {
+        delete nextState.diffFromPrevious;
+      }
+
+      states.push(nextState);
+    }
+
+    const curatedTrace = {
+      ...trace,
+      states,
+      curation: {
+        sourceTracePath: sourceTraceDir,
+        exportedAt: options.exportedAt || new Date().toISOString(),
+        keptIds: curation.keptIds,
+        ignoredIds
+      }
+    };
+
+    await writeTrace(exportDir, curatedTrace);
+    await writeSummary(exportDir, curatedTrace);
+    return {
+      traceDir: exportDir,
+      trace: curatedTrace,
+      curation: curatedTrace.curation
+    };
+  } catch (error) {
+    await fs.rm(exportDir, { recursive: true, force: true });
+    throw error;
+  }
+}
+
 export async function writeSummary(traceDir, trace) {
   const lines = [];
   lines.push(`# ${trace.name}`);
@@ -118,6 +233,76 @@ export async function listTraceDirs(root = ".deltaframe/traces") {
 
 export function relativeTracePath(traceDir, filePath) {
   return toPosixPath(path.relative(traceDir, filePath));
+}
+
+function normalizeIgnoredIds(input, stateIds) {
+  if (Array.isArray(input?.ignoredIds)) {
+    return uniqueStrings(input.ignoredIds);
+  }
+
+  if (input?.states && typeof input.states === "object") {
+    return uniqueStrings(
+      Object.entries(input.states)
+        .filter(([, status]) => status === "ignored" || status === false)
+        .map(([id]) => id)
+    );
+  }
+
+  if (Array.isArray(input?.keptIds)) {
+    const keptIds = new Set(uniqueStrings(input.keptIds));
+    return [...stateIds].filter((id) => !keptIds.has(id));
+  }
+
+  return [];
+}
+
+function uniqueStrings(values) {
+  return [...new Set(values.filter((value) => typeof value === "string"))];
+}
+
+async function createUniqueTraceDir(root, name) {
+  await mkdirp(root);
+  const safeName = slugify(name, "curated-trace");
+
+  for (let counter = 1; ; counter += 1) {
+    const suffix = counter === 1 ? "" : `-${counter}`;
+    const traceDir = path.join(root, `${safeName}${suffix}`);
+    try {
+      await fs.mkdir(traceDir);
+      await mkdirp(path.join(traceDir, "frames"));
+      await mkdirp(path.join(traceDir, "diffs"));
+      return traceDir;
+    } catch (error) {
+      if (error?.code !== "EEXIST") {
+        throw error;
+      }
+    }
+  }
+}
+
+async function copyTracePng(sourceTraceDir, outputTraceDir, relativeFile, label) {
+  if (!relativeFile || path.isAbsolute(relativeFile) || path.extname(relativeFile).toLowerCase() !== ".png") {
+    throw new Error(`Invalid ${label} path: ${relativeFile}`);
+  }
+
+  const sourceFile = path.resolve(sourceTraceDir, relativeFile);
+  assertPathInside(sourceTraceDir, sourceFile, label);
+  const realSourceTraceDir = await fs.realpath(sourceTraceDir);
+  const realSourceFile = await fs.realpath(sourceFile);
+  assertPathInside(realSourceTraceDir, realSourceFile, label);
+
+  const outputFile = path.resolve(outputTraceDir, relativeFile);
+  assertPathInside(outputTraceDir, outputFile, label);
+  await mkdirp(path.dirname(outputFile));
+  await fs.copyFile(realSourceFile, outputFile);
+}
+
+function assertPathInside(parent, target, label) {
+  const relative = path.relative(parent, target);
+  if (relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))) {
+    return;
+  }
+  throw new Error(`${label} must stay inside the trace directory`);
 }
 
 async function exists(target) {

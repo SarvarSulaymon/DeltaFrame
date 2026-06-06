@@ -61,6 +61,8 @@ If no trace directory is provided, DeltaFrame uses the newest trace under `.delt
 deltaframe review
 ```
 
+The review UI lets you mark individual states as kept or ignored. Choices are saved in `curation.json` inside the trace folder, and the Export Kept action writes a new complete trace folder with only kept states.
+
 Options:
 
 | Option | Default | Description |
