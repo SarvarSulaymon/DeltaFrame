@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { watchWeb } from "./capture/playwrightWatcher.js";
+import { createTerminalCaptureControl } from "./capture/terminalControls.js";
 import { normalizeMaskRegions } from "./diff/masks.js";
 import { startMcpServer } from "./mcp/server.js";
 import { startReviewServer } from "./review/server.js";
@@ -58,6 +59,9 @@ async function runWatch(parsed) {
 
   const viewport = parseViewport(parsed.flags.viewport || "1440x900");
   const masks = await maskOptions(parsed.flags);
+  const controls = shouldEnableWatchControls(parsed.flags)
+    ? createTerminalCaptureControl()
+    : undefined;
   const result = await watchWeb({
     url,
     name: parsed.flags.name,
@@ -73,12 +77,17 @@ async function runWatch(parsed) {
     headed: Boolean(parsed.flags.headed),
     channel: parsed.flags.channel,
     verbose: Boolean(parsed.flags.verbose),
-    masks
+    masks,
+    controls
   });
 
   console.log(`Trace written to ${result.traceDir}`);
   console.log(`Saved ${result.trace.states.length} state(s).`);
   console.log(`Review it with: deltaframe review "${result.traceDir}"`);
+}
+
+function shouldEnableWatchControls(flags) {
+  return Boolean(process.stdin.isTTY) && !flags["no-controls"];
 }
 
 async function runReview(parsed) {
@@ -222,6 +231,7 @@ Watch options:
   --verbose                   Print capture setup details to stderr.
   --full-page                 Capture full-page screenshots.
   --headed                    Show the browser so you can interact manually.
+  --no-controls               Disable interactive p/q terminal controls.
 
 Examples:
   deltaframe watch --url http://localhost:3000 --name landing-flow --headed

@@ -10,6 +10,7 @@ import { labelWithRoute, padNumber, routeFromUrl, sleep, slugify } from "../util
 export async function watchWeb(options) {
   const log = options.verbose ? (message) => console.error(`[deltaframe] ${message}`) : () => {};
   const masks = normalizeMaskRegions(options.masks);
+  const controls = options.controls;
   log("loading Playwright");
   const playwright = await loadPackage("playwright");
   const chromium = playwright.chromium || playwright.default?.chromium;
@@ -109,10 +110,25 @@ export async function watchWeb(options) {
   };
   process.once("SIGINT", stopHandler);
 
+  const shouldStop = () => stop || Boolean(controls?.shouldStop?.());
+  const waitWhilePaused = async () => {
+    if (!controls?.isPaused?.()) return false;
+    await controls.waitWhilePaused?.();
+    return true;
+  };
+
   try {
+    controls?.start?.();
     log(`opening ${options.url}`);
     await goto(page, options.url);
     trace.source.finalUrl = page.url();
+
+    await waitWhilePaused();
+    if (shouldStop()) {
+      await writeTrace(traceDir, trace);
+      await writeSummary(traceDir, trace);
+      return { traceDir, trace };
+    }
 
     log("capturing initial state");
     let lastSaved = await saveState({
@@ -131,7 +147,7 @@ export async function watchWeb(options) {
     let consoleCursor = consoleEvents.length;
     let networkCursor = networkEvents.length;
 
-    while (!stop) {
+    while (!shouldStop()) {
       if (options.durationMs > 0 && Date.now() - startedAt >= options.durationMs) {
         break;
       }
@@ -140,6 +156,9 @@ export async function watchWeb(options) {
       }
 
       await sleep(options.intervalMs);
+      if (shouldStop()) break;
+      if (await waitWhilePaused()) continue;
+
       const candidate = await capture(page, options);
       const candidateDiff = await diffPngBuffers(lastSaved.buffer, candidate, {
         pixelThreshold: options.pixelThreshold,
@@ -151,6 +170,9 @@ export async function watchWeb(options) {
       }
 
       await sleep(options.idleMs);
+      if (shouldStop()) break;
+      if (await waitWhilePaused()) continue;
+
       const stable = await capture(page, options);
       const stableDiff = await diffPngBuffers(lastSaved.buffer, stable, {
         pixelThreshold: options.pixelThreshold,
@@ -188,6 +210,7 @@ export async function watchWeb(options) {
     return { traceDir, trace };
   } finally {
     process.removeListener("SIGINT", stopHandler);
+    controls?.cleanup?.();
     await browser.close().catch(() => {});
   }
 }

@@ -107,6 +107,8 @@ deltaframe watch --url http://localhost:3000 --name landing-flow --headed
 
 Interact with the opened browser. DeltaFrame samples the page, waits for visual changes to settle, and saves only changed states.
 
+In an interactive terminal, press `p` to pause or resume capture without closing the browser, `q` to stop and write the trace, or Ctrl+C to stop. Use `--no-controls` for CI and other non-interactive runs.
+
 Review the captured trace:
 
 ```bash
@@ -158,6 +160,7 @@ Common watch options:
 --channel chrome        # optional: use installed Chrome/Edge instead of Playwright Chromium
 --full-page
 --headed
+--no-controls           # disable p/q interactive terminal controls
 ```
 
 Use `--mask` or `--mask-file` for clocks, cursors, animated banners, and other dynamic regions that should be ignored during image diffing. Masks are saved in trace settings, but frame PNGs stay unmasked.

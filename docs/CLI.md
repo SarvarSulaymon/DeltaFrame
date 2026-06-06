@@ -40,6 +40,15 @@ Options:
 | `--verbose` | `false` | Print capture setup details to stderr. |
 | `--full-page` | `false` | Capture the whole scrollable page instead of viewport. |
 | `--headed` | `false` | Show Chromium so you can interact manually. |
+| `--no-controls` | `false` | Disable interactive terminal controls. |
+
+When `watch` runs from an interactive terminal, DeltaFrame prints concise controls to stderr:
+
+- `p` pauses or resumes capture without closing the browser.
+- `q` stops capture and writes the trace.
+- Ctrl+C still stops capture.
+
+Paused captures keep the browser open but do not take screenshots or save states. Use `--no-controls` for CI or other non-interactive runs.
 
 Examples:
 

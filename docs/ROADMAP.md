@@ -25,7 +25,7 @@ DeltaFrame should stay narrow: a helper for visual state memory during AI-assist
 - [x] route-aware labels
 - [x] console/network error grouping
 - [x] option to mask dynamic regions
-- [ ] option to pause/resume capture from the terminal
+- [x] option to pause/resume capture from the terminal
 
 ## 0.3 Agent Workflow
 
