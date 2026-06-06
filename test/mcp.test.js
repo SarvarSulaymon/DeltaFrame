@@ -92,6 +92,7 @@ test("MCP resources/read returns summary, states, per-state JSON, and image blob
     assert.equal(summary.result.contents[0].mimeType, "text/markdown");
     assert.match(summary.result.contents[0].text, /# Fixture Trace/);
     assert.match(summary.result.contents[0].text, /0002 changed/);
+    assert.match(summary.result.contents[0].text, /Annotation: Human note for Codex/);
 
     const states = await client.request({
       method: "resources/read",
@@ -100,6 +101,8 @@ test("MCP resources/read returns summary, states, per-state JSON, and image blob
     const stateIndex = JSON.parse(states.result.contents[0].text);
     assert.equal(states.result.contents[0].mimeType, "application/json");
     assert.equal(stateIndex.stateCount, 2);
+    assert.equal(stateIndex.annotationCount, 1);
+    assert.equal(stateIndex.states[1].annotation, "Human note for Codex");
     assert.equal(stateIndex.states[1].resources.image, `${baseUri}/state/0002/image`);
     assert.equal(stateIndex.states[1].resources.diff, `${baseUri}/state/0002/diff`);
 
@@ -109,6 +112,7 @@ test("MCP resources/read returns summary, states, per-state JSON, and image blob
     });
     const stateDetails = JSON.parse(state.result.contents[0].text);
     assert.equal(stateDetails.state.id, "0002");
+    assert.equal(stateDetails.annotation, "Human note for Codex");
     assert.equal(stateDetails.resources.diff, `${baseUri}/state/0002/diff`);
 
     const image = await client.request({
@@ -309,6 +313,18 @@ async function writeFixtureTrace(traceRoot) {
         }
       ]
     }), null, 2)}\n`,
+    "utf8"
+  );
+  await fs.writeFile(
+    path.join(traceDir, "curation.json"),
+    `${JSON.stringify({
+      version: 1,
+      updatedAt: "2026-06-07T08:00:00.000Z",
+      ignoredIds: [],
+      annotations: {
+        "0002": "Human note for Codex"
+      }
+    }, null, 2)}\n`,
     "utf8"
   );
   return traceDir;

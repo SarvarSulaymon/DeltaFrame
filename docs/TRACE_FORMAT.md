@@ -5,6 +5,7 @@ Each DeltaFrame capture writes a trace folder:
 ```text
 trace-folder/
   trace.json
+  curation.json  (optional; written by the review UI)
   summary.md
   frames/
   diffs/
@@ -127,6 +128,28 @@ These IDs are what MCP tools use.
 ## Paths
 
 All image paths inside `trace.json` are relative to the trace folder and use forward slashes.
+
+## `curation.json`
+
+The review UI writes `curation.json` when a human marks states as kept/ignored or adds notes for Codex.
+
+Example:
+
+```json
+{
+  "version": 1,
+  "updatedAt": "2026-06-07T08:00:00.000Z",
+  "ignoredIds": ["0002"],
+  "annotations": {
+    "0001": "Baseline looks good.",
+    "0003": "Button overlaps the footer on mobile."
+  }
+}
+```
+
+`ignoredIds` and `annotations` use the stable state IDs from `trace.json`. DeltaFrame trims annotation strings, drops empty notes, and rejects unknown state IDs when saving from the review UI or trace store.
+
+When exporting a curated trace, DeltaFrame copies only kept states and carries annotations only for those kept states into the exported trace metadata.
 
 ## Routes
 

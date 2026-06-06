@@ -61,12 +61,14 @@ export async function readCuration(traceDir, trace = undefined) {
   const ignoredIds = (resolvedTrace.states || [])
     .map((state) => state.id)
     .filter((id) => ignoredSet.has(id));
+  const annotations = normalizeAnnotations(raw.annotations, stateIds);
 
   return {
     version: 1,
     updatedAt: raw.updatedAt || null,
     keptIds,
     ignoredIds,
+    annotations,
     counts: {
       kept: keptIds.length,
       ignored: ignoredIds.length,
@@ -79,16 +81,24 @@ export async function writeCuration(traceDir, input, trace = undefined) {
   const resolvedTrace = trace || await readTrace(traceDir);
   const stateIds = new Set((resolvedTrace.states || []).map((state) => state.id));
   const ignoredIds = normalizeIgnoredIds(input, stateIds);
+  const existingCuration = await readCuration(traceDir, resolvedTrace);
+  const annotationInput = Object.hasOwn(input || {}, "annotations")
+    ? input.annotations
+    : existingCuration.annotations;
+  const { annotations, unknownIds: unknownAnnotationIds } = normalizeAnnotations(annotationInput, stateIds, true);
   const unknownIds = ignoredIds.filter((id) => !stateIds.has(id));
+  unknownIds.push(...unknownAnnotationIds);
+  const unknownIdSet = new Set(unknownIds);
 
-  if (unknownIds.length) {
-    throw new Error(`Unknown state id(s): ${unknownIds.join(", ")}`);
+  if (unknownIdSet.size) {
+    throw new Error(`Unknown state id(s): ${[...unknownIdSet].join(", ")}`);
   }
 
   const curation = {
     version: 1,
     updatedAt: new Date().toISOString(),
-    ignoredIds
+    ignoredIds,
+    annotations
   };
   await fs.writeFile(
     path.join(traceDir, "curation.json"),
@@ -114,6 +124,10 @@ export async function exportCuratedTrace(traceDir, options = {}) {
 
   try {
     const states = [];
+    const keptAnnotations = Object.fromEntries(
+      Object.entries(curation.annotations || {}).filter(([id]) => keptIds.has(id))
+    );
+
     for (const state of trace.states || []) {
       if (!keptIds.has(state.id)) continue;
 
@@ -137,7 +151,8 @@ export async function exportCuratedTrace(traceDir, options = {}) {
         sourceTracePath: sourceTraceDir,
         exportedAt: options.exportedAt || new Date().toISOString(),
         keptIds: curation.keptIds,
-        ignoredIds
+        ignoredIds,
+        annotations: keptAnnotations
       }
     };
 
@@ -177,6 +192,14 @@ export async function writeSummary(traceDir, trace) {
     }
     if (state.metrics) {
       lines.push(`  - Changed: ${(state.metrics.ratio * 100).toFixed(3)}%`);
+    }
+    const annotation = trace.curation?.annotations?.[state.id];
+    if (annotation) {
+      const annotationLines = String(annotation).split(/\r?\n/);
+      lines.push(`  - Annotation: ${annotationLines[0]}`);
+      for (const line of annotationLines.slice(1)) {
+        lines.push(`    ${line}`);
+      }
     }
     if (state.console?.length) {
       lines.push(`  - Console: ${state.console.length} event(s)`);
@@ -268,6 +291,55 @@ function normalizeIgnoredIds(input, stateIds) {
   }
 
   return [];
+}
+
+function normalizeAnnotations(input, stateIds, includeUnknown = false) {
+  const unknownIds = [];
+
+  if (!isPlainObject(input)) {
+    return includeUnknown ? { annotations: {}, unknownIds } : {};
+  }
+
+  const annotations = {};
+  for (const [id, rawNote] of Object.entries(input)) {
+    const note = normalizeAnnotationNote(rawNote);
+    if (!note) continue;
+
+    if (!stateIds.has(id)) {
+      if (includeUnknown) {
+        unknownIds.push(id);
+      }
+      continue;
+    }
+
+    annotations[id] = note;
+  }
+
+  return includeUnknown ? { annotations, unknownIds } : annotations;
+}
+
+function normalizeAnnotationNote(value) {
+  if (typeof value === "string") {
+    const note = value.trim();
+    return note ? note : null;
+  }
+
+  if (isPlainObject(value)) {
+    if (typeof value.note === "string") {
+      const note = value.note.trim();
+      return note ? note : null;
+    }
+    if (typeof value.text === "string") {
+      const note = value.text.trim();
+      return note ? note : null;
+    }
+  }
+
+  return null;
+}
+
+function isPlainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function uniqueStrings(values) {

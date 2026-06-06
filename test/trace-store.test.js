@@ -81,18 +81,55 @@ test("trace curation defaults to keep all states and persists ignored states", a
     updatedAt: null,
     keptIds: ["0001", "0002"],
     ignoredIds: [],
+    annotations: {},
     counts: { kept: 2, ignored: 0, total: 2 }
   });
 
-  const curation = await writeCuration(traceDir, { ignoredIds: ["0002"] });
+  const curation = await writeCuration(traceDir, {
+    ignoredIds: ["0002"],
+    annotations: {
+      "0001": "  Check header spacing.  ",
+      "0002": { note: "Loading copy is confusing." },
+      empty: "   "
+    }
+  });
   assert.equal(curation.counts.kept, 1);
   assert.deepEqual(curation.keptIds, ["0001"]);
+  assert.deepEqual(curation.annotations, {
+    "0001": "Check header spacing.",
+    "0002": "Loading copy is confusing."
+  });
   assert.deepEqual((await readCuration(traceDir)).ignoredIds, ["0002"]);
 
   await assert.rejects(
     writeCuration(traceDir, { ignoredIds: ["missing"] }),
     /Unknown state id/
   );
+  await assert.rejects(
+    writeCuration(traceDir, { annotations: { missing: "unknown" } }),
+    /Unknown state id/
+  );
+
+  await writeCuration(traceDir, { ignoredIds: [] });
+  assert.deepEqual((await readCuration(traceDir)).annotations, {
+    "0001": "Check header spacing.",
+    "0002": "Loading copy is confusing."
+  });
+
+  await fs.writeFile(
+    path.join(traceDir, "curation.json"),
+    `${JSON.stringify({
+      states: { "0002": "ignored" },
+      annotations: {
+        "0001": { text: "Legacy note" },
+        missing: "ignored"
+      }
+    }, null, 2)}\n`,
+    "utf8"
+  );
+  const legacyCuration = await readCuration(traceDir);
+  assert.deepEqual(legacyCuration.ignoredIds, ["0002"]);
+  assert.deepEqual(legacyCuration.annotations, { "0001": "Legacy note" });
 });
 
 test("exportCuratedTrace writes a complete trace with only kept states", async () => {
@@ -106,7 +143,14 @@ test("exportCuratedTrace writes a complete trace with only kept states", async (
   await fs.writeFile(path.join(traceDir, "diffs", "0001-0002.png"), "diff-12");
   await fs.writeFile(path.join(traceDir, "diffs", "0002-0003.png"), "diff-23");
   await writeTrace(traceDir, fixtureTraceWithThreeStates());
-  await writeCuration(traceDir, { ignoredIds: ["0002"] });
+  await writeCuration(traceDir, {
+    ignoredIds: ["0002"],
+    annotations: {
+      "0001": "Keep this state as baseline.",
+      "0002": "Ignore spinner flicker.",
+      "0003": "Verify final layout."
+    }
+  });
 
   const result = await exportCuratedTrace(traceDir, {
     exportedAt: "2026-06-06T13:00:00.000Z"
@@ -121,11 +165,19 @@ test("exportCuratedTrace writes a complete trace with only kept states", async (
   assert.equal(await exists(path.join(result.traceDir, "frames", "0003.png")), true);
   assert.equal(await exists(path.join(result.traceDir, "frames", "0002.png")), false);
   assert.equal(await exists(path.join(result.traceDir, "diffs", "0002-0003.png")), false);
+  assert.match(
+    await fs.readFile(path.join(result.traceDir, "summary.md"), "utf8"),
+    /Annotation: Verify final layout\./
+  );
   assert.deepEqual(exported.curation, {
     sourceTracePath: path.resolve(traceDir),
     exportedAt: "2026-06-06T13:00:00.000Z",
     keptIds: ["0001", "0003"],
-    ignoredIds: ["0002"]
+    ignoredIds: ["0002"],
+    annotations: {
+      "0001": "Keep this state as baseline.",
+      "0003": "Verify final layout."
+    }
   });
 });
 

@@ -5,7 +5,7 @@ import { watchWeb } from "../capture/playwrightWatcher.js";
 import { formatIssueGroup } from "../diagnostics/issues.js";
 import { diffPngBuffers } from "../diff/imageDiff.js";
 import { normalizeMaskRegions } from "../diff/masks.js";
-import { findLatestTraceDir, listTraceDirs, readTrace } from "../trace/store.js";
+import { findLatestTraceDir, listTraceDirs, readCuration, readTrace } from "../trace/store.js";
 import { parseViewport } from "../utils/format.js";
 
 const PROTOCOL_VERSION = "2025-06-18";
@@ -302,10 +302,11 @@ class DeltaFrameMcpServer {
     }
 
     const trace = await readTrace(traceDir);
+    const curation = await readCuration(traceDir, trace);
     return jsonResult({
       traceDir,
-      summary: buildSummary(traceDir, trace),
-      metadata: buildTraceMetadata(traceDir, trace)
+      summary: buildSummary(traceDir, trace, curation),
+      metadata: buildTraceMetadata(traceDir, trace, curation)
     });
   }
 
@@ -336,6 +337,7 @@ class DeltaFrameMcpServer {
   async toolListStates(args) {
     const traceDir = await this.resolveTraceDir(args.traceDir);
     const trace = await readTrace(traceDir);
+    const curation = await readCuration(traceDir, trace);
     const states = trace.states.map((state) => ({
       id: state.id,
       label: state.label,
@@ -343,6 +345,7 @@ class DeltaFrameMcpServer {
       timestampMs: state.timestampMs,
       url: state.url,
       changedRatio: state.metrics?.ratio ?? null,
+      annotation: annotationFor(curation, state.id) || null,
       issues: state.issues || [],
       image: resolveTraceFile(traceDir, state.image, "state image"),
       diffFromPrevious: state.diffFromPrevious ? resolveTraceFile(traceDir, state.diffFromPrevious, "state diff") : null
@@ -384,7 +387,8 @@ class DeltaFrameMcpServer {
   async toolSummarizeTrace(args) {
     const traceDir = await this.resolveTraceDir(args.traceDir);
     const trace = await readTrace(traceDir);
-    return textResult(buildSummary(traceDir, trace));
+    const curation = await readCuration(traceDir, trace);
+    return textResult(buildSummary(traceDir, trace, curation));
   }
 
   async listResources() {
@@ -470,6 +474,7 @@ class DeltaFrameMcpServer {
 
     const resolvedTraceDir = await this.resolveTraceDir(resource.traceDir);
     const trace = await readTrace(resolvedTraceDir);
+    const curation = await readCuration(resolvedTraceDir, trace);
     const baseUri = traceResourceBase(resolvedTraceDir);
 
     if (resource.kind === "trace") {
@@ -485,17 +490,17 @@ class DeltaFrameMcpServer {
     }
 
     if (resource.kind === "summary") {
-      return textResource(uri, "text/markdown", buildSummaryMarkdown(resolvedTraceDir, trace));
+      return textResource(uri, "text/markdown", buildSummaryMarkdown(resolvedTraceDir, trace, curation));
     }
 
     if (resource.kind === "states") {
-      return textResource(uri, "application/json", JSON.stringify(buildStateIndex(resolvedTraceDir, trace, baseUri), null, 2));
+      return textResource(uri, "application/json", JSON.stringify(buildStateIndex(resolvedTraceDir, trace, baseUri, curation), null, 2));
     }
 
     const { state } = await this.findState(resolvedTraceDir, resource.stateId);
 
     if (resource.kind === "state") {
-      return textResource(uri, "application/json", JSON.stringify(buildStateDetails(resolvedTraceDir, trace, state, baseUri), null, 2));
+      return textResource(uri, "application/json", JSON.stringify(buildStateDetails(resolvedTraceDir, trace, state, baseUri, curation), null, 2));
     }
 
     if (resource.kind === "stateImage") {
@@ -726,17 +731,25 @@ function jsonResult(value) {
   return textResult(JSON.stringify(value, null, 2));
 }
 
-function buildSummary(traceDir, trace) {
+function buildSummary(traceDir, trace, curation = {}) {
   const lines = [];
   lines.push(`DeltaFrame trace: ${trace.name}`);
   lines.push(`Path: ${traceDir}`);
   lines.push(`Source: ${trace.source.url}`);
   lines.push(`States: ${trace.states.length}`);
+  const annotations = annotationCount(curation);
+  if (annotations) {
+    lines.push(`Annotations: ${annotations}`);
+  }
   lines.push("");
   for (const state of trace.states) {
     const changed = state.metrics ? `${(state.metrics.ratio * 100).toFixed(3)}% changed` : "initial";
     const route = state.route ? `, route ${state.route}` : "";
     lines.push(`- ${state.id} ${state.label}: ${changed}${route}, ${state.url}`);
+    const annotation = annotationFor(curation, state.id);
+    if (annotation) {
+      lines.push(`  annotation: ${annotation}`);
+    }
     for (const issue of state.issues || []) {
       lines.push(`  issue: ${formatIssueGroup(issue)}`);
     }
@@ -744,7 +757,7 @@ function buildSummary(traceDir, trace) {
   return lines.join("\n");
 }
 
-function buildSummaryMarkdown(traceDir, trace) {
+function buildSummaryMarkdown(traceDir, trace, curation = {}) {
   const states = trace.states || [];
   const lines = [];
   lines.push(`# ${trace.name}`);
@@ -753,6 +766,7 @@ function buildSummaryMarkdown(traceDir, trace) {
   lines.push(`- Source: ${trace.source?.url || "unknown"}`);
   lines.push(`- Created: ${trace.createdAt || "unknown"}`);
   lines.push(`- States: ${states.length}`);
+  lines.push(`- Annotations: ${annotationCount(curation)}`);
   lines.push(`- Issue groups: ${states.reduce((total, state) => total + (state.issues?.length || 0), 0)}`);
   lines.push("");
   lines.push("## States");
@@ -769,6 +783,10 @@ function buildSummaryMarkdown(traceDir, trace) {
     if (state.diffFromPrevious) {
       lines.push(`  - Previous diff: \`${state.diffFromPrevious}\``);
     }
+    const annotation = annotationFor(curation, state.id);
+    if (annotation) {
+      lines.push(`  - Annotation: ${annotation}`);
+    }
     for (const issue of state.issues || []) {
       lines.push(`  - Issue: ${formatIssueGroup(issue)}`);
     }
@@ -777,7 +795,7 @@ function buildSummaryMarkdown(traceDir, trace) {
   return lines.join("\n");
 }
 
-function buildStateIndex(traceDir, trace, baseUri) {
+function buildStateIndex(traceDir, trace, baseUri, curation = {}) {
   const states = trace.states || [];
   return {
     traceDir,
@@ -790,11 +808,12 @@ function buildStateIndex(traceDir, trace, baseUri) {
       fullPage: Boolean(trace.source?.fullPage)
     },
     stateCount: states.length,
-    states: states.map((state) => compactState(traceDir, state, baseUri))
+    annotationCount: annotationCount(curation),
+    states: states.map((state) => compactState(traceDir, state, baseUri, curation))
   };
 }
 
-function buildStateDetails(traceDir, trace, state, baseUri) {
+function buildStateDetails(traceDir, trace, state, baseUri, curation = {}) {
   return {
     traceDir,
     trace: {
@@ -803,11 +822,12 @@ function buildStateDetails(traceDir, trace, state, baseUri) {
       source: trace.source
     },
     state,
+    annotation: annotationFor(curation, state.id) || null,
     resources: stateResourceLinks(traceDir, state, baseUri)
   };
 }
 
-function compactState(traceDir, state, baseUri) {
+function compactState(traceDir, state, baseUri, curation = {}) {
   return {
     id: state.id,
     label: state.label,
@@ -815,6 +835,7 @@ function compactState(traceDir, state, baseUri) {
     timestampMs: state.timestampMs,
     url: state.url,
     changedRatio: state.metrics?.ratio ?? null,
+    annotation: annotationFor(curation, state.id) || null,
     issueCount: state.issues?.length || 0,
     resources: stateResourceLinks(traceDir, state, baseUri)
   };
@@ -839,7 +860,7 @@ function stateResourceLinks(traceDir, state, baseUri) {
   return resources;
 }
 
-function buildTraceMetadata(traceDir, trace) {
+function buildTraceMetadata(traceDir, trace, curation = {}) {
   const states = trace.states || [];
   const lastState = states[states.length - 1];
   return {
@@ -856,11 +877,21 @@ function buildTraceMetadata(traceDir, trace) {
     },
     settings: trace.settings || {},
     stateCount: states.length,
+    annotationCount: annotationCount(curation),
     issueGroupCount: states.reduce((total, state) => total + (state.issues?.length || 0), 0),
     firstStateId: states[0]?.id,
     lastStateId: lastState?.id,
     lastStateLabel: lastState?.label
   };
+}
+
+function annotationFor(curation, stateId) {
+  const value = curation?.annotations?.[stateId];
+  return typeof value === "string" && value ? value : undefined;
+}
+
+function annotationCount(curation) {
+  return Object.keys(curation?.annotations || {}).length;
 }
 
 function viewportOption(value) {

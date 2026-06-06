@@ -311,6 +311,36 @@ function buildHtml(initialTrace) {
       font-size: 12px;
       white-space: pre-wrap;
     }
+    .annotation {
+      margin-top: 16px;
+      padding: 12px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    .annotation label {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .annotation textarea {
+      width: 100%;
+      min-height: 88px;
+      resize: vertical;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 8px 10px;
+      color: var(--ink);
+      font: inherit;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .annotation-actions {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 8px;
+    }
     @media (max-width: 920px) {
       main { grid-template-columns: 1fr; }
       aside { border-right: 0; border-bottom: 1px solid var(--line); }
@@ -341,6 +371,7 @@ function buildHtml(initialTrace) {
     let curation = {
       keptIds: trace.states.map((state) => state.id),
       ignoredIds: [],
+      annotations: {},
       counts: { kept: trace.states.length, ignored: 0, total: trace.states.length }
     };
     let busy = false;
@@ -368,8 +399,16 @@ function buildHtml(initialTrace) {
       return count ? '<span class="pill issue">' + count + ' issue' + (count === 1 ? '' : 's') + '</span>' : '';
     }
 
+    function annotationLabel(state) {
+      return annotations()[state.id] ? '<span class="pill">note</span>' : '';
+    }
+
     function ignoredSet() {
       return new Set(curation.ignoredIds || []);
+    }
+
+    function annotations() {
+      return curation.annotations || {};
     }
 
     function selectedState() {
@@ -408,7 +447,7 @@ function buildHtml(initialTrace) {
           '<div><div class="state-title">' + state.id + " " + escapeHtml(state.label) + '</div>' +
           '<div class="state-meta">' + state.timestampMs + 'ms - ' + pct(state.metrics && state.metrics.ratio) +
           '<span class="pill ' + (ignored ? "ignored" : "kept") + '">' + (ignored ? "ignored" : "kept") + '</span>' +
-          issueLabel(state) + '</div></div>';
+          issueLabel(state) + annotationLabel(state) + '</div></div>';
         button.onclick = () => {
           selected = index;
           render();
@@ -426,6 +465,7 @@ function buildHtml(initialTrace) {
       const consoleText = state.console?.length
         ? state.console.map((event) => '[' + event.type + ' @ ' + event.timestampMs + 'ms] ' + event.text).join("\\n")
         : "";
+      const annotation = annotations()[state.id] || "";
 
       detailsEl.innerHTML =
         '<div class="viewer">' +
@@ -450,8 +490,21 @@ function buildHtml(initialTrace) {
           '<dt>Image</dt><dd>' + escapeHtml(state.image) + '</dd>' +
           '<dt>Diff</dt><dd>' + escapeHtml(state.diffFromPrevious || "n/a") + '</dd>' +
         '</dl>' +
+        '<div class="annotation">' +
+          '<label for="stateNote">Human note for Codex</label>' +
+          '<textarea id="stateNote" rows="4" placeholder="Add feedback, intent, or what Codex should inspect in this state.">' +
+            escapeHtml(annotation) +
+          '</textarea>' +
+          '<div class="annotation-actions">' +
+            '<button class="action" id="saveNote" type="button"' + (busy ? " disabled" : "") + '>Save Note</button>' +
+          '</div>' +
+        '</div>' +
         (issueText ? '<div class="issues">' + escapeHtml(issueText) + '</div>' : '') +
         (consoleText ? '<div class="console">' + escapeHtml(consoleText) + '</div>' : '');
+
+      document.getElementById("saveNote").onclick = () => {
+        saveAnnotation(state.id, document.getElementById("stateNote").value);
+      };
     }
 
     function formatIssue(issue) {
@@ -480,18 +533,21 @@ function buildHtml(initialTrace) {
       render();
     }
 
-    async function saveCuration(nextIgnoredIds) {
+    async function saveCuration(nextIgnoredIds, nextAnnotations = annotations(), successMessage = "Curation saved.") {
       busy = true;
       render();
       try {
         const response = await fetch("/curation", {
           method: "PUT",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ ignoredIds: nextIgnoredIds })
+          body: JSON.stringify({
+            ignoredIds: nextIgnoredIds,
+            annotations: nextAnnotations
+          })
         });
         if (!response.ok) throw new Error(await response.text());
         curation = await response.json();
-        statusLineEl.textContent = "Curation saved.";
+        statusLineEl.textContent = successMessage;
       } catch (error) {
         statusLineEl.textContent = "Could not save curation: " + error.message;
       } finally {
@@ -509,6 +565,17 @@ function buildHtml(initialTrace) {
         ignored.add(state.id);
       }
       saveCuration(trace.states.map((item) => item.id).filter((id) => ignored.has(id)));
+    }
+
+    function saveAnnotation(stateId, value) {
+      const nextAnnotations = { ...annotations() };
+      const note = value.trim();
+      if (note) {
+        nextAnnotations[stateId] = note;
+      } else {
+        delete nextAnnotations[stateId];
+      }
+      saveCuration(curation.ignoredIds || [], nextAnnotations, note ? "Annotation saved." : "Annotation cleared.");
     }
 
     async function exportKeptTrace() {

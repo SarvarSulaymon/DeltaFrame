@@ -115,7 +115,7 @@ Review the captured trace:
 node ./bin/deltaframe.js review .deltaframe/traces/<trace-folder>
 ```
 
-In the review UI, use Keep/Ignore to curate noisy states. DeltaFrame saves those choices as `curation.json`, and Export Kept creates a new complete trace folder containing only kept states.
+In the review UI, use Keep/Ignore and per-state notes to curate noisy states. DeltaFrame saves those choices as `curation.json`, and Export Kept creates a new complete trace folder containing only kept states plus their notes.
 
 Or summarize the newest trace:
 

@@ -69,7 +69,7 @@ deltaframe://trace/{encodedTraceDir}/state/{stateId}/image
 deltaframe://trace/{encodedTraceDir}/state/{stateId}/diff
 ```
 
-All resource reads are constrained to the configured trace root, and image/diff files must remain inside the resolved trace directory.
+Trace summaries, state indexes, and per-state JSON include human annotations from `curation.json` when present. All resource reads are constrained to the configured trace root, and image/diff files must remain inside the resolved trace directory.
 
 ## Tools
 
