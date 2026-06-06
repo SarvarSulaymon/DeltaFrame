@@ -48,6 +48,22 @@ test("trace store creates, reads, summarizes, lists, and finds traces", async ()
   assert.deepEqual(await listTraceDirs(path.join(root, "missing")), []);
 });
 
+test("trace store creates unique directories for concurrent captures", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "deltaframe-trace-race-"));
+  const traceDirs = await Promise.all(Array.from({ length: 20 }, () => (
+    createTraceDir({ outDir: root, name: "Landing Flow" })
+  )));
+  const uniqueTraceDirs = new Set(traceDirs);
+
+  assert.equal(uniqueTraceDirs.size, traceDirs.length);
+  assert.equal(traceDirs.every((traceDir) => path.basename(traceDir).includes("-landing-flow")), true);
+
+  for (const traceDir of traceDirs) {
+    assert.equal(await exists(path.join(traceDir, "frames")), true);
+    assert.equal(await exists(path.join(traceDir, "diffs")), true);
+  }
+});
+
 function fixtureTrace({ name, createdAt }) {
   return {
     version: 1,

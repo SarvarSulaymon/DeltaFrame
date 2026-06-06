@@ -4,18 +4,24 @@ import { slugify, timestampSlug, toPosixPath } from "../utils/format.js";
 
 export async function createTraceDir({ outDir, name }) {
   const root = path.resolve(outDir);
+  await mkdirp(root);
   const baseName = `${timestampSlug()}-${slugify(name || "trace")}`;
-  let traceDir = path.join(root, baseName);
-  let counter = 2;
 
-  while (await exists(traceDir)) {
-    traceDir = path.join(root, `${baseName}-${counter}`);
-    counter += 1;
+  for (let counter = 1; ; counter += 1) {
+    const suffix = counter === 1 ? "" : `-${counter}`;
+    const traceDir = path.join(root, `${baseName}${suffix}`);
+
+    try {
+      await fs.mkdir(traceDir);
+      await mkdirp(path.join(traceDir, "frames"));
+      await mkdirp(path.join(traceDir, "diffs"));
+      return traceDir;
+    } catch (error) {
+      if (error?.code !== "EEXIST") {
+        throw error;
+      }
+    }
   }
-
-  await mkdirp(path.join(traceDir, "frames"));
-  await mkdirp(path.join(traceDir, "diffs"));
-  return traceDir;
 }
 
 export async function writeTrace(traceDir, trace) {

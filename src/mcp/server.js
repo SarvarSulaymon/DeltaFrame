@@ -242,10 +242,11 @@ class DeltaFrameMcpServer {
       throw new Error("durationMs must be positive for MCP capture calls.");
     }
 
+    const outDir = await this.resolveOutputRoot(args.outDir);
     const result = await watchWeb({
       url: args.url,
       name: stringOption(args.name),
-      outDir: args.outDir || this.traceRoot,
+      outDir,
       intervalMs: numberOption(args.intervalMs, 200, "intervalMs"),
       idleMs: numberOption(args.idleMs, 350, "idleMs"),
       durationMs,
@@ -268,7 +269,7 @@ class DeltaFrameMcpServer {
   }
 
   async toolLatestTrace(args) {
-    const traceRoot = args.traceRoot || this.traceRoot;
+    const traceRoot = await this.resolveTraceRoot(args.traceRoot);
     const traceDir = await findLatestTraceDir(traceRoot);
     if (!traceDir) {
       throw new Error(`No DeltaFrame traces found under ${path.resolve(traceRoot)}`);
@@ -301,7 +302,8 @@ class DeltaFrameMcpServer {
   }
 
   async toolListTraces(args) {
-    const traces = await listTraceDirs(args.traceRoot || this.traceRoot);
+    const traceRoot = await this.resolveTraceRoot(args.traceRoot);
+    const traces = await listTraceDirs(traceRoot);
     return textResult(JSON.stringify(traces, null, 2));
   }
 
@@ -314,8 +316,8 @@ class DeltaFrameMcpServer {
       timestampMs: state.timestampMs,
       url: state.url,
       changedRatio: state.metrics?.ratio ?? null,
-      image: path.join(traceDir, state.image),
-      diffFromPrevious: state.diffFromPrevious ? path.join(traceDir, state.diffFromPrevious) : null
+      image: resolveTraceFile(traceDir, state.image, "state image"),
+      diffFromPrevious: state.diffFromPrevious ? resolveTraceFile(traceDir, state.diffFromPrevious, "state diff") : null
     }));
     return textResult(JSON.stringify({ traceDir, name: trace.name, states }, null, 2));
   }
@@ -323,8 +325,7 @@ class DeltaFrameMcpServer {
   async toolGetStateImage(args) {
     const traceDir = await this.resolveTraceDir(args.traceDir);
     const { state } = await this.findState(traceDir, args.stateId);
-    const imagePath = path.join(traceDir, state.image);
-    const image = await fs.readFile(imagePath);
+    const image = await readTraceFile(traceDir, state.image, "state image");
     return {
       content: [
         { type: "text", text: `${state.id} ${state.label}\n${state.url}` },
@@ -337,8 +338,8 @@ class DeltaFrameMcpServer {
     const traceDir = await this.resolveTraceDir(args.traceDir);
     const { state: fromState } = await this.findState(traceDir, args.fromStateId);
     const { state: toState } = await this.findState(traceDir, args.toStateId);
-    const fromImage = await fs.readFile(path.join(traceDir, fromState.image));
-    const toImage = await fs.readFile(path.join(traceDir, toState.image));
+    const fromImage = await readTraceFile(traceDir, fromState.image, "from state image");
+    const toImage = await readTraceFile(traceDir, toState.image, "to state image");
     const diff = await diffPngBuffers(fromImage, toImage);
     return {
       content: [
@@ -374,7 +375,8 @@ class DeltaFrameMcpServer {
       throw new Error(`Unsupported resource URI: ${uri}`);
     }
     const traceDir = decodeURIComponent(uri.slice("deltaframe://trace/".length));
-    const trace = await readTrace(traceDir);
+    const resolvedTraceDir = await this.resolveTraceDir(traceDir);
+    const trace = await readTrace(resolvedTraceDir);
     return {
       contents: [
         {
@@ -387,12 +389,45 @@ class DeltaFrameMcpServer {
   }
 
   async resolveTraceDir(traceDir) {
-    if (traceDir) return path.resolve(traceDir);
+    if (traceDir) {
+      return await this.resolveExistingPath(traceDir, "traceDir");
+    }
     const latest = await findLatestTraceDir(this.traceRoot);
     if (!latest) {
       throw new Error(`No DeltaFrame traces found under ${this.traceRoot}`);
     }
-    return latest;
+    return await this.resolveExistingPath(latest, "latest traceDir");
+  }
+
+  async resolveTraceRoot(traceRoot) {
+    if (!traceRoot) return this.traceRoot;
+    const resolved = this.resolveInsideTraceRoot(traceRoot, "traceRoot");
+    if (!await exists(resolved)) return resolved;
+    return await this.resolveExistingPath(resolved, "traceRoot");
+  }
+
+  async resolveOutputRoot(outDir) {
+    const outputRoot = this.resolveInsideTraceRoot(outDir || this.traceRoot, "outDir");
+    if (await exists(outputRoot)) {
+      return await this.resolveExistingPath(outputRoot, "outDir");
+    }
+
+    const nearest = await nearestExistingAncestor(outputRoot);
+    if (nearest && await exists(this.traceRoot)) {
+      await assertRealPathInside(await fs.realpath(this.traceRoot), nearest, "outDir");
+    }
+    return outputRoot;
+  }
+
+  resolveInsideTraceRoot(target, label) {
+    const resolved = path.resolve(target);
+    assertPathInside(this.traceRoot, resolved, label);
+    return resolved;
+  }
+
+  async resolveExistingPath(target, label) {
+    const resolved = this.resolveInsideTraceRoot(target, label);
+    return await assertRealPathInside(await fs.realpath(this.traceRoot), resolved, label);
   }
 
   async findState(traceDir, stateId) {
@@ -414,6 +449,55 @@ class DeltaFrameMcpServer {
       id,
       error: { code, message }
     });
+  }
+}
+
+function resolveTraceFile(traceDir, filePath, label) {
+  if (!filePath || typeof filePath !== "string") {
+    throw new Error(`${label} must be a non-empty string.`);
+  }
+  const resolved = path.resolve(traceDir, filePath);
+  assertPathInside(traceDir, resolved, label);
+  return resolved;
+}
+
+async function readTraceFile(traceDir, filePath, label) {
+  const resolved = resolveTraceFile(traceDir, filePath, label);
+  const realTraceDir = await fs.realpath(traceDir);
+  const realFile = await assertRealPathInside(realTraceDir, resolved, label);
+  return fs.readFile(realFile);
+}
+
+function assertPathInside(root, target, label) {
+  const relative = path.relative(root, target);
+  if (relative === "" || (relative && !relative.startsWith("..") && !path.isAbsolute(relative))) {
+    return;
+  }
+  throw new Error(`${label} must stay inside ${root}.`);
+}
+
+async function assertRealPathInside(realRoot, target, label) {
+  const realTarget = await fs.realpath(target);
+  assertPathInside(realRoot, realTarget, label);
+  return realTarget;
+}
+
+async function nearestExistingAncestor(target) {
+  let current = path.resolve(target);
+  while (!await exists(current)) {
+    const parent = path.dirname(current);
+    if (parent === current) return undefined;
+    current = parent;
+  }
+  return current;
+}
+
+async function exists(target) {
+  try {
+    await fs.access(target);
+    return true;
+  } catch {
+    return false;
   }
 }
 
