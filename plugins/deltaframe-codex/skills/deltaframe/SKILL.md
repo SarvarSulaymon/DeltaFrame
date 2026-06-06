@@ -13,10 +13,30 @@ Use DeltaFrame when the user has captured a visual trace with `deltaframe watch`
 2. If the user gives a URL to inspect, use `deltaframe_capture_url` with a short positive `durationMs`.
 3. If the trace directory is not obvious, use `deltaframe_latest_trace`.
 4. Start review with `deltaframe_summarize_trace` or `deltaframe_list_states`.
-5. Inspect only the state images needed to understand the UI issue.
-6. Compare adjacent states when the issue is a layout shift, transition, modal, validation, hover, loading, or responsive breakpoint.
-7. Use `deltaframe_review_trace` when a human-readable local review UI would help; run the returned command outside MCP.
-8. Make focused code changes and recapture when visual verification is needed.
+5. If you need MCP resource-oriented access, read:
+   - `deltaframe://trace/{encodedTraceDir}/summary`
+   - `deltaframe://trace/{encodedTraceDir}/states`
+   - `deltaframe://trace/{encodedTraceDir}/state/{stateId}`
+   - `deltaframe://trace/{encodedTraceDir}/state/{stateId}/image`
+6. Inspect only the state images needed to understand the UI issue.
+7. Compare adjacent states when the issue is a layout shift, transition, modal, validation, hover, loading, or responsive breakpoint.
+8. Use `deltaframe_review_trace` when a human-readable local review UI would help; run the returned command outside MCP.
+9. Make focused code changes and recapture when visual verification is needed.
+
+## UI Review Prompt Templates
+
+When the user asks for a UI review from a DeltaFrame trace, pick one of these templates and follow the template order:
+
+- `plugins/deltaframe-codex/skills/deltaframe/prompts/0.3.0/ui-review-triage.prompt.md`
+  - `Trace triage`: identify and prioritize candidate issues and suspicious state transitions.
+- `plugins/deltaframe-codex/skills/deltaframe/prompts/0.3.0/ui-review-state-comparison.prompt.md`
+  - `State comparison`: drill into a specific issue, compare two states, and isolate likely UI causes.
+- `plugins/deltaframe-codex/skills/deltaframe/prompts/0.3.0/ui-review-implementation-brief.prompt.md`
+  - `Implementation brief`: generate a minimal, testable code change plan from the chosen findings.
+- `plugins/deltaframe-codex/skills/deltaframe/prompts/0.3.0/ui-review-verification.prompt.md`
+  - `Before/after verification`: confirm changes with an explicit recapture + comparison pass.
+
+See [docs/UI_REVIEW_PROMPTS.md](../../../../docs/UI_REVIEW_PROMPTS.md) for file-by-file placeholder guidance.
 
 ## Local CLI Fallback
 
