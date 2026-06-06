@@ -1,0 +1,52 @@
+{
+  "version": "0.1.0",
+  "name": "example-flow",
+  "createdAt": "2026-06-06T12:00:00.000Z",
+  "source": {
+    "type": "web",
+    "url": "http://localhost:3000",
+    "finalUrl": "http://localhost:3000/",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "fullPage": false
+  },
+  "settings": {
+    "intervalMs": 200,
+    "idleMs": 350,
+    "durationMs": 15000,
+    "minChangedRatio": 0.003,
+    "pixelThreshold": 0.12,
+    "maxFrames": 80
+  },
+  "states": [
+    {
+      "id": "0001",
+      "label": "initial",
+      "timestampMs": 512,
+      "url": "http://localhost:3000/",
+      "title": "Prototype",
+      "image": "frames/0001-initial.png",
+      "console": []
+    },
+    {
+      "id": "0002",
+      "label": "changed-001240ms",
+      "timestampMs": 1240,
+      "url": "http://localhost:3000/",
+      "title": "Prototype",
+      "image": "frames/0002-changed-001240ms.png",
+      "diffFromPrevious": "diffs/0001-0002.png",
+      "metrics": {
+        "changedPixels": 8400,
+        "totalPixels": 1296000,
+        "ratio": 0.006481481481481481,
+        "width": 1440,
+        "height": 900,
+        "dimensionsChanged": false
+      },
+      "console": []
+    }
+  ]
+}

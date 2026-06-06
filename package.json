@@ -1,0 +1,32 @@
+{
+  "name": "deltaframe",
+  "version": "0.1.0",
+  "description": "Capture meaningful visual state changes from local prototypes for AI-assisted UI iteration.",
+  "type": "module",
+  "bin": {
+    "deltaframe": "./bin/deltaframe.js"
+  },
+  "scripts": {
+    "doctor": "node ./bin/deltaframe.js doctor",
+    "help": "node ./bin/deltaframe.js --help",
+    "smoke": "node ./bin/deltaframe.js doctor"
+  },
+  "keywords": [
+    "codex",
+    "design",
+    "ui",
+    "prototype",
+    "screenshots",
+    "visual-diff",
+    "mcp"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "pixelmatch": "^7.2.0",
+    "playwright": "^1.60.0",
+    "pngjs": "^7.0.0"
+  }
+}

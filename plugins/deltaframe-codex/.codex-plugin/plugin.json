@@ -1,0 +1,6 @@
+{
+  "name": "deltaframe-codex",
+  "version": "0.1.0",
+  "description": "Codex guidance for using DeltaFrame visual state traces during UI iteration.",
+  "skills": "./skills/"
+}

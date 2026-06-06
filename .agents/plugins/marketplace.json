@@ -1,0 +1,20 @@
+{
+  "name": "deltaframe-local",
+  "interface": {
+    "displayName": "DeltaFrame Local"
+  },
+  "plugins": [
+    {
+      "name": "deltaframe-codex",
+      "source": {
+        "source": "local",
+        "path": "./plugins/deltaframe-codex"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}
