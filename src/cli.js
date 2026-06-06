@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { watchWeb } from "./capture/playwrightWatcher.js";
+import { normalizeMaskRegions } from "./diff/masks.js";
 import { startMcpServer } from "./mcp/server.js";
 import { startReviewServer } from "./review/server.js";
 import { findLatestTraceDir, readTrace } from "./trace/store.js";
@@ -56,6 +57,7 @@ async function runWatch(parsed) {
   }
 
   const viewport = parseViewport(parsed.flags.viewport || "1440x900");
+  const masks = await maskOptions(parsed.flags);
   const result = await watchWeb({
     url,
     name: parsed.flags.name,
@@ -70,7 +72,8 @@ async function runWatch(parsed) {
     fullPage: Boolean(parsed.flags["full-page"]),
     headed: Boolean(parsed.flags.headed),
     channel: parsed.flags.channel,
-    verbose: Boolean(parsed.flags.verbose)
+    verbose: Boolean(parsed.flags.verbose),
+    masks
   });
 
   console.log(`Trace written to ${result.traceDir}`);
@@ -171,6 +174,25 @@ function numberFlag(value, fallback) {
   return parsed;
 }
 
+async function maskOptions(flags) {
+  const masks = [];
+
+  if (flags.mask !== undefined || flags.masks !== undefined) {
+    masks.push(...normalizeMaskRegions(flags.mask ?? flags.masks, "--mask"));
+  }
+
+  if (flags["mask-file"] !== undefined) {
+    if (flags["mask-file"] === true || flags["mask-file"] === "") {
+      throw new Error("--mask-file requires a path to a JSON file.");
+    }
+    const maskFile = String(flags["mask-file"]);
+    const text = await fs.readFile(maskFile, "utf8");
+    masks.push(...normalizeMaskRegions(text, "--mask-file"));
+  }
+
+  return masks;
+}
+
 function printHelp() {
   console.log(`DeltaFrame 0.1.0
 
@@ -192,6 +214,8 @@ Watch options:
   --idle <ms>                 Wait after a change before saving. Default: 350
   --min-ratio <number>        Changed-pixel ratio needed to save. Default: 0.003
   --pixel-threshold <number>  Per-pixel diff threshold. Default: 0.12
+  --mask <json>               Mask region(s) ignored by diffing, for example '[{"x":0,"y":0,"width":120,"height":32}]'.
+  --mask-file <path>          Read diff mask region(s) from a JSON file.
   --max-frames <number>       Stop after this many saved states. Default: 80
   --viewport <WxH>            Browser viewport. Default: 1440x900
   --channel <name>            Playwright browser channel, for example chrome or msedge.
@@ -201,6 +225,7 @@ Watch options:
 
 Examples:
   deltaframe watch --url http://localhost:3000 --name landing-flow --headed
+  deltaframe watch --url http://localhost:3000 --mask '[{"x":0,"y":0,"width":160,"height":40,"label":"clock"}]'
   deltaframe review .deltaframe/traces/2026-06-06-landing-flow
   deltaframe mcp --trace-root .deltaframe/traces
 `);

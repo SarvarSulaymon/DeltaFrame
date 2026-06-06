@@ -4,6 +4,7 @@ import readline from "node:readline";
 import { watchWeb } from "../capture/playwrightWatcher.js";
 import { formatIssueGroup } from "../diagnostics/issues.js";
 import { diffPngBuffers } from "../diff/imageDiff.js";
+import { normalizeMaskRegions } from "../diff/masks.js";
 import { findLatestTraceDir, listTraceDirs, readTrace } from "../trace/store.js";
 import { parseViewport } from "../utils/format.js";
 
@@ -103,6 +104,26 @@ class DeltaFrameMcpServer {
             idleMs: { type: "number", description: "Wait after detecting a change before saving a stable frame." },
             minChangedRatio: { type: "number", description: "Minimum changed-pixel ratio required to save a new state." },
             pixelThreshold: { type: "number", description: "Per-pixel diff sensitivity passed to pixelmatch." },
+            masks: {
+              anyOf: [
+                {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    required: ["x", "y", "width", "height"],
+                    properties: {
+                      x: { type: "number" },
+                      y: { type: "number" },
+                      width: { type: "number" },
+                      height: { type: "number" },
+                      label: { type: "string" }
+                    }
+                  }
+                },
+                { type: "string", description: "JSON array of mask regions." }
+              ],
+              description: "Rectangles ignored during image diffing. Captured screenshots remain unmasked."
+            },
             maxFrames: { type: "number", description: "Stop after saving this many states." },
             viewport: {
               anyOf: [
@@ -258,7 +279,8 @@ class DeltaFrameMcpServer {
       fullPage: booleanOption(args.fullPage, false, "fullPage"),
       headed: booleanOption(args.headed, false, "headed"),
       channel: stringOption(args.channel),
-      verbose: false
+      verbose: false,
+      masks: normalizeMaskRegions(args.masks)
     });
 
     return jsonResult({
@@ -339,11 +361,12 @@ class DeltaFrameMcpServer {
 
   async toolCompareStates(args) {
     const traceDir = await this.resolveTraceDir(args.traceDir);
-    const { state: fromState } = await this.findState(traceDir, args.fromStateId);
+    const { trace, state: fromState } = await this.findState(traceDir, args.fromStateId);
     const { state: toState } = await this.findState(traceDir, args.toStateId);
     const fromImage = await readTraceFile(traceDir, fromState.image, "from state image");
     const toImage = await readTraceFile(traceDir, toState.image, "to state image");
-    const diff = await diffPngBuffers(fromImage, toImage);
+    const masks = normalizeMaskRegions(trace.settings?.masks);
+    const diff = await diffPngBuffers(fromImage, toImage, { masks });
     return {
       content: [
         {

@@ -142,6 +142,16 @@ changedPixels / totalPixels
 
 For UI work, tiny ratios can still matter. A validation message or button shift might be below 1% of pixels but still visually important.
 
+## Diff Masks
+
+`settings.masks` is optional. When present, each mask is a rectangle in screenshot pixel coordinates:
+
+```json
+{ "x": 0, "y": 0, "width": 160, "height": 40, "label": "clock" }
+```
+
+Masks are applied only to image diffing and changed-pixel metrics. Frame PNGs remain unmasked so the trace still shows the real UI. `metrics.totalPixels` excludes masked pixels, counting overlapping mask regions only once.
+
 ## Console Events
 
 DeltaFrame stores warning/error console messages observed since the previous saved state. This helps connect visual states to runtime issues without turning the trace into a full browser log.

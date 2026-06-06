@@ -2,12 +2,14 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { groupIssueEvents, issueEventsFromState } from "../diagnostics/issues.js";
 import { diffPngBuffers } from "../diff/imageDiff.js";
+import { normalizeMaskRegions } from "../diff/masks.js";
 import { createTraceDir, writeSummary, writeTrace } from "../trace/store.js";
 import { loadPackage } from "../utils/deps.js";
 import { labelWithRoute, padNumber, routeFromUrl, sleep, slugify } from "../utils/format.js";
 
 export async function watchWeb(options) {
   const log = options.verbose ? (message) => console.error(`[deltaframe] ${message}`) : () => {};
+  const masks = normalizeMaskRegions(options.masks);
   log("loading Playwright");
   const playwright = await loadPackage("playwright");
   const chromium = playwright.chromium || playwright.default?.chromium;
@@ -95,7 +97,8 @@ export async function watchWeb(options) {
       durationMs: options.durationMs,
       minChangedRatio: options.minChangedRatio,
       pixelThreshold: options.pixelThreshold,
-      maxFrames: options.maxFrames
+      maxFrames: options.maxFrames,
+      ...(masks.length > 0 ? { masks } : {})
     },
     states: []
   };
@@ -139,7 +142,8 @@ export async function watchWeb(options) {
       await sleep(options.intervalMs);
       const candidate = await capture(page, options);
       const candidateDiff = await diffPngBuffers(lastSaved.buffer, candidate, {
-        pixelThreshold: options.pixelThreshold
+        pixelThreshold: options.pixelThreshold,
+        masks
       });
 
       if (candidateDiff.ratio < options.minChangedRatio) {
@@ -149,7 +153,8 @@ export async function watchWeb(options) {
       await sleep(options.idleMs);
       const stable = await capture(page, options);
       const stableDiff = await diffPngBuffers(lastSaved.buffer, stable, {
-        pixelThreshold: options.pixelThreshold
+        pixelThreshold: options.pixelThreshold,
+        masks
       });
 
       if (stableDiff.ratio < options.minChangedRatio) {

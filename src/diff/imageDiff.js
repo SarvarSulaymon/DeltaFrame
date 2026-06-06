@@ -1,4 +1,5 @@
 import { loadPackage } from "../utils/deps.js";
+import { copyMaskedPixels, maskedPixelCount, normalizeMaskRegions } from "./masks.js";
 
 export async function diffPngBuffers(beforeBuffer, afterBuffer, options = {}) {
   const pixelmatchModule = await loadPackage("pixelmatch");
@@ -16,6 +17,8 @@ export async function diffPngBuffers(beforeBuffer, afterBuffer, options = {}) {
   const height = Math.max(before.height, after.height);
   const normalizedBefore = normalizePng(PNG, before, width, height);
   const normalizedAfter = normalizePng(PNG, after, width, height);
+  const masks = normalizeMaskRegions(options.masks);
+  copyMaskedPixels(normalizedBefore, normalizedAfter, masks, width, height);
   const diff = new PNG({ width, height });
 
   const changedPixels = pixelmatch(
@@ -33,7 +36,7 @@ export async function diffPngBuffers(beforeBuffer, afterBuffer, options = {}) {
     }
   );
 
-  const totalPixels = width * height;
+  const totalPixels = Math.max(0, width * height - maskedPixelCount(masks, width, height));
 
   return {
     changedPixels,

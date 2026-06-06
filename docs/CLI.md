@@ -32,6 +32,8 @@ Options:
 | `--idle` | `350` | Time to wait after detecting a change before saving a stable frame. |
 | `--min-ratio` | `0.003` | Minimum changed-pixel ratio required to save a new state. |
 | `--pixel-threshold` | `0.12` | Per-pixel sensitivity passed to pixelmatch. |
+| `--mask` | none | JSON mask region or array of regions ignored during diffing, for example `'[{"x":0,"y":0,"width":160,"height":40,"label":"clock"}]'`. |
+| `--mask-file` | none | Path to a JSON file containing mask region(s). |
 | `--max-frames` | `80` | Stop after saving this many states. |
 | `--viewport` | `1440x900` | Browser viewport. |
 | `--channel` | Playwright default | Browser channel, for example `chrome` or `msedge`. Useful if Playwright browsers are not installed. |
@@ -45,7 +47,19 @@ Examples:
 deltaframe watch --url http://localhost:5173 --name onboarding --duration 30000 --headed
 deltaframe watch --url file:///Users/me/prototype/index.html --full-page
 deltaframe watch --url http://localhost:3000 --min-ratio 0.001 --idle 500
+deltaframe watch --url http://localhost:3000 --mask '[{"x":0,"y":0,"width":160,"height":40,"label":"clock"}]'
+deltaframe watch --url http://localhost:3000 --mask-file examples/masks.json
 ```
+
+Mask rectangles use screenshot pixel coordinates:
+
+```json
+[
+  { "x": 0, "y": 0, "width": 160, "height": 40, "label": "clock" }
+]
+```
+
+Masks affect diffing only. DeltaFrame still saves the original unmasked screenshots so humans and agents can inspect the real UI, while `trace.json` records the applied masks under `settings.masks`.
 
 ## `review`
 

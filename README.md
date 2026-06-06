@@ -153,11 +153,14 @@ Common watch options:
 --interval 200          # screenshot sample interval in ms
 --idle 350              # wait after a change before saving a stable state
 --min-ratio 0.003       # changed-pixel ratio needed to save
+--mask '[{"x":0,"y":0,"width":160,"height":40,"label":"clock"}]'
 --viewport 1440x900
 --channel chrome        # optional: use installed Chrome/Edge instead of Playwright Chromium
 --full-page
 --headed
 ```
+
+Use `--mask` or `--mask-file` for clocks, cursors, animated banners, and other dynamic regions that should be ignored during image diffing. Masks are saved in trace settings, but frame PNGs stay unmasked.
 
 See [docs/CLI.md](docs/CLI.md) for full command details.
 

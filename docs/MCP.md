@@ -60,6 +60,9 @@ Input:
   "idleMs": 350,
   "minChangedRatio": 0.003,
   "pixelThreshold": 0.12,
+  "masks": [
+    { "x": 0, "y": 0, "width": 160, "height": 40, "label": "clock" }
+  ],
   "maxFrames": 80,
   "viewport": "1440x900",
   "fullPage": false,
@@ -70,6 +73,8 @@ Input:
 ```
 
 Only `url` is required. The MCP capture call must use a positive `durationMs`; use the CLI `watch --duration 0` form for interactive captures that run until Ctrl+C.
+
+`masks` may be an array of `{ "x", "y", "width", "height", "label" }` rectangles or a JSON string containing that array. Masks are applied only while diffing; saved screenshots remain unmasked. Captures record normalized masks in `trace.json` under `settings.masks`.
 
 Returns JSON text with:
 

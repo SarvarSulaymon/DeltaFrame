@@ -24,7 +24,7 @@ DeltaFrame should stay narrow: a helper for visual state memory during AI-assist
 - [x] dogfood proof loop through MCP: capture an actual local prototype trace, curate/export it if useful, then have Codex use that trace to make one concrete UI improvement
 - [x] route-aware labels
 - [x] console/network error grouping
-- [ ] option to mask dynamic regions
+- [x] option to mask dynamic regions
 - [ ] option to pause/resume capture from the terminal
 
 ## 0.3 Agent Workflow
