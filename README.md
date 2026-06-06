@@ -124,6 +124,9 @@ deltaframe mcp --trace-root .deltaframe/traces
 
 It exposes tools for:
 
+- capturing a URL into a new trace
+- finding the latest trace
+- returning the review command and local URL for a trace
 - listing traces
 - listing states in a trace
 - returning a state image
@@ -153,7 +156,7 @@ Next priorities:
 1. harden the capture loop against animations and hot reloads
 2. add manual keep/ignore export from the review UI
 3. improve labels with route, action, and DOM metadata
-4. package the Codex plugin flow
+4. add before/after recapture prompts for Codex
 5. add desktop/region capture mode
 
 See [docs/ROADMAP.md](docs/ROADMAP.md).

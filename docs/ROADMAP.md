@@ -16,6 +16,9 @@ DeltaFrame should stay narrow: a helper for visual state memory during AI-assist
 
 ## 0.2 Better Capture
 
+- [x] MCP tool to capture a URL into a new trace
+- [x] MCP tool to find the latest trace
+- [x] MCP-safe review handoff command
 - [ ] manual keep/ignore in review UI
 - [ ] export curated trace
 - [ ] route-aware labels

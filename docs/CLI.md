@@ -86,6 +86,8 @@ deltaframe mcp --trace-root .deltaframe/traces
 
 The MCP server writes only JSON-RPC messages to stdout. Diagnostics go to stderr.
 
+MCP tools can capture a URL, find the latest trace, return a review command, list traces and states, fetch state images, compare states, and summarize traces. See [MCP.md](MCP.md) for tool schemas.
+
 ## `doctor`
 
 Check local runtime dependencies.

@@ -1,8 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import readline from "node:readline";
+import { watchWeb } from "../capture/playwrightWatcher.js";
 import { diffPngBuffers } from "../diff/imageDiff.js";
 import { findLatestTraceDir, listTraceDirs, readTrace } from "../trace/store.js";
+import { parseViewport } from "../utils/format.js";
 
 const PROTOCOL_VERSION = "2025-06-18";
 
@@ -86,6 +88,65 @@ class DeltaFrameMcpServer {
   tools() {
     return [
       {
+        name: "deltaframe_capture_url",
+        title: "Capture URL",
+        description: "Capture meaningful visual state changes from a local web URL with Playwright.",
+        inputSchema: {
+          type: "object",
+          required: ["url"],
+          properties: {
+            url: { type: "string", description: "URL to capture, usually localhost or file://." },
+            name: { type: "string", description: "Human name for the trace." },
+            durationMs: { type: "number", description: "Capture duration in milliseconds. Must be positive for MCP calls." },
+            intervalMs: { type: "number", description: "Screenshot sample interval in milliseconds." },
+            idleMs: { type: "number", description: "Wait after detecting a change before saving a stable frame." },
+            minChangedRatio: { type: "number", description: "Minimum changed-pixel ratio required to save a new state." },
+            pixelThreshold: { type: "number", description: "Per-pixel diff sensitivity passed to pixelmatch." },
+            maxFrames: { type: "number", description: "Stop after saving this many states." },
+            viewport: {
+              anyOf: [
+                { type: "string", description: "Viewport as WIDTHxHEIGHT, for example 1440x900." },
+                {
+                  type: "object",
+                  required: ["width", "height"],
+                  properties: {
+                    width: { type: "number" },
+                    height: { type: "number" }
+                  }
+                }
+              ]
+            },
+            fullPage: { type: "boolean", description: "Capture full-page screenshots." },
+            headed: { type: "boolean", description: "Show the browser for manual interaction." },
+            channel: { type: "string", description: "Playwright browser channel, for example chrome or msedge." },
+            outDir: { type: "string", description: "Trace root directory. Defaults to the MCP server trace root." }
+          }
+        }
+      },
+      {
+        name: "deltaframe_latest_trace",
+        title: "Latest Trace",
+        description: "Return the newest DeltaFrame trace directory and summary metadata.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            traceRoot: { type: "string", description: "Optional trace root directory." }
+          }
+        }
+      },
+      {
+        name: "deltaframe_review_trace",
+        title: "Review Trace",
+        description: "Return the local CLI command and URL for reviewing a trace without blocking the MCP server.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            traceDir: { type: "string", description: "Trace directory. Defaults to latest trace." },
+            port: { type: "number", description: "Local HTTP port. Default: 7799." }
+          }
+        }
+      },
+      {
         name: "deltaframe_list_traces",
         title: "List DeltaFrame Traces",
         description: "List captured DeltaFrame traces available on this machine.",
@@ -150,6 +211,12 @@ class DeltaFrameMcpServer {
 
   async callTool(name, args) {
     switch (name) {
+      case "deltaframe_capture_url":
+        return this.toolCaptureUrl(args);
+      case "deltaframe_latest_trace":
+        return this.toolLatestTrace(args);
+      case "deltaframe_review_trace":
+        return this.toolReviewTrace(args);
       case "deltaframe_list_traces":
         return this.toolListTraces(args);
       case "deltaframe_list_states":
@@ -163,6 +230,74 @@ class DeltaFrameMcpServer {
       default:
         throw new Error(`Unknown DeltaFrame tool: ${name}`);
     }
+  }
+
+  async toolCaptureUrl(args) {
+    if (!args.url || typeof args.url !== "string") {
+      throw new Error("deltaframe_capture_url requires a string url.");
+    }
+
+    const durationMs = numberOption(args.durationMs, 15000, "durationMs");
+    if (durationMs <= 0) {
+      throw new Error("durationMs must be positive for MCP capture calls.");
+    }
+
+    const result = await watchWeb({
+      url: args.url,
+      name: stringOption(args.name),
+      outDir: args.outDir || this.traceRoot,
+      intervalMs: numberOption(args.intervalMs, 200, "intervalMs"),
+      idleMs: numberOption(args.idleMs, 350, "idleMs"),
+      durationMs,
+      minChangedRatio: numberOption(args.minChangedRatio, 0.003, "minChangedRatio"),
+      pixelThreshold: numberOption(args.pixelThreshold, 0.12, "pixelThreshold"),
+      maxFrames: numberOption(args.maxFrames, 80, "maxFrames"),
+      viewport: viewportOption(args.viewport),
+      fullPage: booleanOption(args.fullPage, false, "fullPage"),
+      headed: booleanOption(args.headed, false, "headed"),
+      channel: stringOption(args.channel),
+      verbose: false
+    });
+
+    return jsonResult({
+      traceDir: result.traceDir,
+      stateCount: result.trace.states.length,
+      summary: buildSummary(result.traceDir, result.trace),
+      metadata: buildTraceMetadata(result.traceDir, result.trace)
+    });
+  }
+
+  async toolLatestTrace(args) {
+    const traceRoot = args.traceRoot || this.traceRoot;
+    const traceDir = await findLatestTraceDir(traceRoot);
+    if (!traceDir) {
+      throw new Error(`No DeltaFrame traces found under ${path.resolve(traceRoot)}`);
+    }
+
+    const trace = await readTrace(traceDir);
+    return jsonResult({
+      traceDir,
+      summary: buildSummary(traceDir, trace),
+      metadata: buildTraceMetadata(traceDir, trace)
+    });
+  }
+
+  async toolReviewTrace(args) {
+    const traceDir = await this.resolveTraceDir(args.traceDir);
+    const trace = await readTrace(traceDir);
+    const port = numberOption(args.port, 7799, "port");
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      throw new Error(`port must be an integer from 1 to 65535, got ${args.port}`);
+    }
+
+    return jsonResult({
+      traceDir,
+      port,
+      localUrl: `http://127.0.0.1:${port}`,
+      command: buildReviewCommand(traceDir, port),
+      summary: `Run the command, then open http://127.0.0.1:${port} to review ${trace.name}.`,
+      metadata: buildTraceMetadata(traceDir, trace)
+    });
   }
 
   async toolListTraces(args) {
@@ -288,6 +423,10 @@ function textResult(text) {
   };
 }
 
+function jsonResult(value) {
+  return textResult(JSON.stringify(value, null, 2));
+}
+
 function buildSummary(traceDir, trace) {
   const lines = [];
   lines.push(`DeltaFrame trace: ${trace.name}`);
@@ -300,4 +439,77 @@ function buildSummary(traceDir, trace) {
     lines.push(`- ${state.id} ${state.label}: ${changed}, ${state.url}`);
   }
   return lines.join("\n");
+}
+
+function buildTraceMetadata(traceDir, trace) {
+  const states = trace.states || [];
+  const lastState = states[states.length - 1];
+  return {
+    traceDir,
+    name: trace.name,
+    version: trace.version,
+    createdAt: trace.createdAt,
+    source: {
+      type: trace.source?.type,
+      url: trace.source?.url,
+      finalUrl: trace.source?.finalUrl,
+      viewport: trace.source?.viewport,
+      fullPage: Boolean(trace.source?.fullPage)
+    },
+    settings: trace.settings || {},
+    stateCount: states.length,
+    firstStateId: states[0]?.id,
+    lastStateId: lastState?.id,
+    lastStateLabel: lastState?.label
+  };
+}
+
+function viewportOption(value) {
+  if (value === undefined) return parseViewport("1440x900");
+  if (typeof value === "string") return parseViewport(value);
+  if (value && typeof value === "object") {
+    const width = numberOption(value.width, undefined, "viewport.width");
+    const height = numberOption(value.height, undefined, "viewport.height");
+    if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1) {
+      throw new Error("viewport width and height must be positive integers.");
+    }
+    return { width, height };
+  }
+  throw new Error("viewport must be a WIDTHxHEIGHT string or an object with width and height.");
+}
+
+function numberOption(value, fallback, name) {
+  if (value === undefined || value === null || value === "") return fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`${name} must be a number, got ${value}`);
+  }
+  return parsed;
+}
+
+function stringOption(value) {
+  if (value === undefined || value === null || value === "") return undefined;
+  return String(value);
+}
+
+function booleanOption(value, fallback, name) {
+  if (value === undefined || value === null || value === "") return fallback;
+  if (typeof value === "boolean") return value;
+  if (value === "true") return true;
+  if (value === "false") return false;
+  throw new Error(`${name} must be a boolean, got ${value}`);
+}
+
+function buildReviewCommand(traceDir, port) {
+  const binPath = process.argv[1] || "deltaframe";
+  const executable = binPath.endsWith("deltaframe.js")
+    ? `${quoteCommandPart(process.execPath)} ${quoteCommandPart(binPath)}`
+    : "deltaframe";
+  return `${executable} review ${quoteCommandPart(traceDir)} --port ${port}`;
+}
+
+function quoteCommandPart(value) {
+  const text = String(value);
+  if (/^[A-Za-z0-9_./:=+-]+$/.test(text)) return text;
+  return `"${text.replaceAll('"', '\\"')}"`;
 }

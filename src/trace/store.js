@@ -124,14 +124,5 @@ async function exists(target) {
 }
 
 async function mkdirp(target) {
-  const resolved = path.resolve(target);
-  const root = path.parse(resolved).root;
-  const segments = path.relative(root, resolved).split(path.sep).filter(Boolean);
-  let current = root;
-
-  for (const segment of segments) {
-    current = path.join(current, segment);
-    if (await exists(current)) continue;
-    await fs.mkdir(current);
-  }
+  await fs.mkdir(target, { recursive: true });
 }

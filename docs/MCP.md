@@ -37,6 +37,64 @@ Restart Codex after changing MCP configuration.
 
 ## Tools
 
+### `deltaframe_capture_url`
+
+Captures meaningful visual state changes from a URL and writes a new trace.
+
+Input:
+
+```json
+{
+  "url": "http://localhost:3000",
+  "name": "landing-flow",
+  "durationMs": 15000,
+  "intervalMs": 200,
+  "idleMs": 350,
+  "minChangedRatio": 0.003,
+  "pixelThreshold": 0.12,
+  "maxFrames": 80,
+  "viewport": "1440x900",
+  "fullPage": false,
+  "headed": false,
+  "channel": "chrome",
+  "outDir": ".deltaframe/traces"
+}
+```
+
+Only `url` is required. The MCP capture call must use a positive `durationMs`; use the CLI `watch --duration 0` form for interactive captures that run until Ctrl+C.
+
+Returns JSON text with:
+
+- `traceDir`
+- `stateCount`
+- `summary`
+- `metadata`
+
+### `deltaframe_latest_trace`
+
+Returns the newest trace directory and summary metadata.
+
+Input:
+
+```json
+{
+  "traceRoot": ".deltaframe/traces"
+}
+```
+
+### `deltaframe_review_trace`
+
+Returns the exact local command to run the review UI and the expected local URL. It does not start the long-running review server inside the MCP request.
+
+Input:
+
+```json
+{
+  "traceDir": ".deltaframe/traces/2026-06-06-landing-flow",
+  "port": 7799
+}
+```
+
 ### `deltaframe_list_traces`
 
 Lists available traces.
@@ -103,12 +161,14 @@ Input:
 ## Suggested Codex Prompt
 
 ```text
-Use DeltaFrame to inspect the latest trace. Identify visual state changes that suggest layout, interaction, or polish issues. Then make the smallest code changes needed and verify the affected state again.
+Use DeltaFrame to capture http://localhost:3000 for 10 seconds, inspect the resulting trace, identify visual state changes that suggest layout, interaction, or polish issues, then make the smallest code changes needed and verify the affected state again.
 ```
 
 ## Notes
 
-- The server is local-first and reads trace files from disk.
+- The server is local-first and reads/writes trace files on disk.
 - It does not upload screenshots.
 - It returns images only when the MCP client asks for them.
+- The MCP server writes only JSON-RPC messages to stdout. Diagnostics and capture logs must go to stderr.
+- `deltaframe_review_trace` returns a command instead of blocking forever with a review server.
 - Keep sensitive traces out of shared folders.

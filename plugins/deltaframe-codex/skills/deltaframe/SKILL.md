@@ -9,19 +9,21 @@ Use DeltaFrame when the user has captured a visual trace with `deltaframe watch`
 
 ## Workflow
 
-1. Ask for the trace directory if it is not obvious from the repository.
-2. Prefer the DeltaFrame MCP tools when the `deltaframe` MCP server is available.
-3. Start with `deltaframe_summarize_trace` or `deltaframe_list_states`.
-4. Inspect only the state images needed to understand the UI issue.
-5. Compare adjacent states when the issue is a layout shift, transition, modal, validation, hover, loading, or responsive breakpoint.
-6. Make focused code changes.
-7. Ask the user to recapture or run DeltaFrame again when visual verification is needed.
+1. Prefer the DeltaFrame MCP tools when the `deltaframe` MCP server is available.
+2. If the user gives a URL to inspect, use `deltaframe_capture_url` with a short positive `durationMs`.
+3. If the trace directory is not obvious, use `deltaframe_latest_trace`.
+4. Start review with `deltaframe_summarize_trace` or `deltaframe_list_states`.
+5. Inspect only the state images needed to understand the UI issue.
+6. Compare adjacent states when the issue is a layout shift, transition, modal, validation, hover, loading, or responsive breakpoint.
+7. Use `deltaframe_review_trace` when a human-readable local review UI would help; run the returned command outside MCP.
+8. Make focused code changes and recapture when visual verification is needed.
 
 ## Local CLI Fallback
 
 If MCP tools are not available, use the local CLI:
 
 ```bash
+deltaframe watch --url <url> --duration 10000
 deltaframe summarize <trace-dir>
 deltaframe review <trace-dir>
 ```
