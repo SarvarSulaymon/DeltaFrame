@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import readline from "node:readline";
 import { watchWeb } from "../capture/playwrightWatcher.js";
+import { formatIssueGroup } from "../diagnostics/issues.js";
 import { diffPngBuffers } from "../diff/imageDiff.js";
 import { findLatestTraceDir, listTraceDirs, readTrace } from "../trace/store.js";
 import { parseViewport } from "../utils/format.js";
@@ -317,6 +318,7 @@ class DeltaFrameMcpServer {
       timestampMs: state.timestampMs,
       url: state.url,
       changedRatio: state.metrics?.ratio ?? null,
+      issues: state.issues || [],
       image: resolveTraceFile(traceDir, state.image, "state image"),
       diffFromPrevious: state.diffFromPrevious ? resolveTraceFile(traceDir, state.diffFromPrevious, "state diff") : null
     }));
@@ -523,6 +525,9 @@ function buildSummary(traceDir, trace) {
     const changed = state.metrics ? `${(state.metrics.ratio * 100).toFixed(3)}% changed` : "initial";
     const route = state.route ? `, route ${state.route}` : "";
     lines.push(`- ${state.id} ${state.label}: ${changed}${route}, ${state.url}`);
+    for (const issue of state.issues || []) {
+      lines.push(`  issue: ${formatIssueGroup(issue)}`);
+    }
   }
   return lines.join("\n");
 }
@@ -544,6 +549,7 @@ function buildTraceMetadata(traceDir, trace) {
     },
     settings: trace.settings || {},
     stateCount: states.length,
+    issueGroupCount: states.reduce((total, state) => total + (state.issues?.length || 0), 0),
     firstStateId: states[0]?.id,
     lastStateId: lastState?.id,
     lastStateLabel: lastState?.label

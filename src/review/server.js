@@ -253,6 +253,10 @@ function buildHtml(initialTrace) {
       color: var(--ignored);
       background: #fbefec;
     }
+    .pill.issue {
+      color: #7a4f00;
+      background: #fff7df;
+    }
     .viewer {
       display: grid;
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -294,6 +298,16 @@ function buildHtml(initialTrace) {
       color: #ffe7df;
       border-radius: 8px;
       font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+    }
+    .issues {
+      margin-top: 16px;
+      padding: 12px;
+      background: #fffaf0;
+      border: 1px solid #ead8a8;
+      border-radius: 8px;
+      color: #3f3218;
       font-size: 12px;
       white-space: pre-wrap;
     }
@@ -349,6 +363,11 @@ function buildHtml(initialTrace) {
       return value == null ? "n/a" : (value * 100).toFixed(3) + "%";
     }
 
+    function issueLabel(state) {
+      const count = (state.issues || []).reduce((total, issue) => total + (issue.count || 0), 0);
+      return count ? '<span class="pill issue">' + count + ' issue' + (count === 1 ? '' : 's') + '</span>' : '';
+    }
+
     function ignoredSet() {
       return new Set(curation.ignoredIds || []);
     }
@@ -388,7 +407,8 @@ function buildHtml(initialTrace) {
           '<img src="' + fileUrl(state.image) + '" alt="">' +
           '<div><div class="state-title">' + state.id + " " + escapeHtml(state.label) + '</div>' +
           '<div class="state-meta">' + state.timestampMs + 'ms - ' + pct(state.metrics && state.metrics.ratio) +
-          '<span class="pill ' + (ignored ? "ignored" : "kept") + '">' + (ignored ? "ignored" : "kept") + '</span></div></div>';
+          '<span class="pill ' + (ignored ? "ignored" : "kept") + '">' + (ignored ? "ignored" : "kept") + '</span>' +
+          issueLabel(state) + '</div></div>';
         button.onclick = () => {
           selected = index;
           render();
@@ -400,6 +420,9 @@ function buildHtml(initialTrace) {
     function renderDetails() {
       const state = selectedState();
       const ignored = isIgnored(state);
+      const issueText = state.issues?.length
+        ? state.issues.map(formatIssue).join("\\n")
+        : "";
       const consoleText = state.console?.length
         ? state.console.map((event) => '[' + event.type + ' @ ' + event.timestampMs + 'ms] ' + event.text).join("\\n")
         : "";
@@ -427,7 +450,17 @@ function buildHtml(initialTrace) {
           '<dt>Image</dt><dd>' + escapeHtml(state.image) + '</dd>' +
           '<dt>Diff</dt><dd>' + escapeHtml(state.diffFromPrevious || "n/a") + '</dd>' +
         '</dl>' +
+        (issueText ? '<div class="issues">' + escapeHtml(issueText) + '</div>' : '') +
         (consoleText ? '<div class="console">' + escapeHtml(consoleText) + '</div>' : '');
+    }
+
+    function formatIssue(issue) {
+      const status = issue.status == null ? "" : " " + issue.status;
+      const url = issue.url ? " " + issue.url : "";
+      const timing = issue.firstTimestampMs === issue.lastTimestampMs
+        ? issue.firstTimestampMs + "ms"
+        : issue.firstTimestampMs + "-" + issue.lastTimestampMs + "ms";
+      return issue.count + "x " + issue.source + "/" + issue.type + status + url + " - " + issue.message + " (" + timing + ")";
     }
 
     function render() {

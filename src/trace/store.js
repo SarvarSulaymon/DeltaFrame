@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { formatIssueGroup } from "../diagnostics/issues.js";
 import { slugify, timestampSlug, toPosixPath } from "../utils/format.js";
 
 export async function createTraceDir({ outDir, name }) {
@@ -180,6 +181,15 @@ export async function writeSummary(traceDir, trace) {
     if (state.console?.length) {
       lines.push(`  - Console: ${state.console.length} event(s)`);
     }
+    if (state.network?.length) {
+      lines.push(`  - Network: ${state.network.length} issue event(s)`);
+    }
+    if (state.issues?.length) {
+      lines.push(`  - Issues: ${state.issues.length} group(s)`);
+      for (const issue of state.issues) {
+        lines.push(`    - ${formatIssueGroup(issue)}`);
+      }
+    }
   }
 
   lines.push("");
@@ -227,7 +237,8 @@ export async function listTraceDirs(root = ".deltaframe/traces") {
       name: trace.name,
       path: traceDir,
       createdAt: trace.createdAt,
-      states: trace.states?.length || 0
+      states: trace.states?.length || 0,
+      issueGroups: (trace.states || []).reduce((total, state) => total + (state.issues?.length || 0), 0)
     });
   }
   traces.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));

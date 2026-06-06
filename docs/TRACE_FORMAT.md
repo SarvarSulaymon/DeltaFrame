@@ -46,7 +46,9 @@ Example:
       "url": "http://localhost:3000/products/42?tab=details#pricing",
       "title": "Prototype",
       "image": "frames/0001-initial-products-42-tab-details-pricing.png",
-      "console": []
+      "console": [],
+      "network": [],
+      "issues": []
     },
     {
       "id": "0002",
@@ -65,7 +67,46 @@ Example:
         "height": 900,
         "dimensionsChanged": false
       },
-      "console": []
+      "console": [
+        {
+          "type": "warning",
+          "text": "Deprecated API used",
+          "url": "http://localhost:3000/app.js",
+          "timestampMs": 1290
+        }
+      ],
+      "network": [
+        {
+          "type": "http",
+          "message": "HTTP 500 Internal Server Error",
+          "url": "http://localhost:3000/api/products/42",
+          "method": "GET",
+          "status": 500,
+          "timestampMs": 1301
+        }
+      ],
+      "issues": [
+        {
+          "source": "console",
+          "type": "warning",
+          "message": "Deprecated API used",
+          "url": "http://localhost:3000/app.js",
+          "status": null,
+          "count": 1,
+          "firstTimestampMs": 1290,
+          "lastTimestampMs": 1290
+        },
+        {
+          "source": "network",
+          "type": "http",
+          "message": "HTTP 500 Internal Server Error",
+          "url": "http://localhost:3000/api/products/42",
+          "status": 500,
+          "count": 1,
+          "firstTimestampMs": 1301,
+          "lastTimestampMs": 1301
+        }
+      ]
     }
   ]
 }
@@ -104,3 +145,33 @@ For UI work, tiny ratios can still matter. A validation message or button shift 
 ## Console Events
 
 DeltaFrame stores warning/error console messages observed since the previous saved state. This helps connect visual states to runtime issues without turning the trace into a full browser log.
+
+`state.console` remains the compatibility field for raw console diagnostics. Each event includes `type`, `text`, and `timestampMs`; events may also include `url` when the browser reports a source location.
+
+## Network Diagnostics
+
+`state.network` stores only failed requests and HTTP error responses observed since the previous saved state. Successful requests are not logged.
+
+Network event types:
+
+- `requestfailed`: a browser-level request failure such as connection refused or DNS failure.
+- `http`: an HTTP response with status `400` or greater.
+
+## Issue Groups
+
+`state.issues` is a compact grouped summary derived from `state.console` and `state.network`. Groups are keyed by `source`, `type`, `message`, `url`, and `status`, then counted within the captured state.
+
+Each issue group is JSON-friendly:
+
+```json
+{
+  "source": "network",
+  "type": "http",
+  "message": "HTTP 500 Internal Server Error",
+  "url": "http://localhost:3000/api/products/42",
+  "status": 500,
+  "count": 2,
+  "firstTimestampMs": 1301,
+  "lastTimestampMs": 1498
+}
+```

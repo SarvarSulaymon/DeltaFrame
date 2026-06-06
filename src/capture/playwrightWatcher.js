@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { groupIssueEvents, issueEventsFromState } from "../diagnostics/issues.js";
 import { diffPngBuffers } from "../diff/imageDiff.js";
 import { createTraceDir, writeSummary, writeTrace } from "../trace/store.js";
 import { loadPackage } from "../utils/deps.js";
@@ -30,13 +31,16 @@ export async function watchWeb(options) {
   });
   const page = await context.newPage();
   const consoleEvents = [];
+  const networkEvents = [];
 
   page.on("console", (message) => {
     const type = message.type();
     if (type === "error" || type === "warning") {
+      const location = message.location();
       consoleEvents.push({
         type,
         text: message.text(),
+        ...(location?.url ? { url: location.url } : {}),
         timestampMs: Date.now()
       });
     }
@@ -46,6 +50,30 @@ export async function watchWeb(options) {
     consoleEvents.push({
       type: "pageerror",
       text: error.message,
+      url: page.url(),
+      timestampMs: Date.now()
+    });
+  });
+
+  page.on("requestfailed", (request) => {
+    networkEvents.push({
+      type: "requestfailed",
+      message: request.failure()?.errorText || "Request failed",
+      url: request.url(),
+      method: request.method(),
+      timestampMs: Date.now()
+    });
+  });
+
+  page.on("response", (response) => {
+    const status = response.status();
+    if (status < 400) return;
+    networkEvents.push({
+      type: "http",
+      message: `HTTP ${status} ${response.statusText()}`.trim(),
+      url: response.url(),
+      method: response.request().method(),
+      status,
       timestampMs: Date.now()
     });
   });
@@ -92,10 +120,13 @@ export async function watchWeb(options) {
       buffer: await capture(page, options),
       startedAt,
       consoleEvents,
-      consoleCursor: 0
+      consoleCursor: 0,
+      networkEvents,
+      networkCursor: 0
     });
 
     let consoleCursor = consoleEvents.length;
+    let networkCursor = networkEvents.length;
 
     while (!stop) {
       if (options.durationMs > 0 && Date.now() - startedAt >= options.durationMs) {
@@ -137,9 +168,12 @@ export async function watchWeb(options) {
         comparison: stableDiff,
         startedAt,
         consoleEvents,
-        consoleCursor
+        consoleCursor,
+        networkEvents,
+        networkCursor
       });
       consoleCursor = consoleEvents.length;
+      networkCursor = networkEvents.length;
     }
 
     log("writing final trace");
@@ -236,6 +270,20 @@ async function saveState(input) {
     };
   }
 
+  const console = input.consoleEvents
+    .slice(input.consoleCursor)
+    .map((event) => ({
+      ...event,
+      timestampMs: event.timestampMs - input.startedAt
+    }));
+  const network = input.networkEvents
+    .slice(input.networkCursor)
+    .map((event) => ({
+      ...event,
+      timestampMs: event.timestampMs - input.startedAt
+    }));
+  const issues = groupIssueEvents(issueEventsFromState({ console, network }));
+
   const state = {
     id,
     label,
@@ -246,12 +294,9 @@ async function saveState(input) {
     image: `frames/${imageName}`,
     diffFromPrevious,
     metrics,
-    console: input.consoleEvents
-      .slice(input.consoleCursor)
-      .map((event) => ({
-        ...event,
-        timestampMs: event.timestampMs - input.startedAt
-      }))
+    console,
+    network,
+    issues
   };
 
   input.trace.states.push(state);
