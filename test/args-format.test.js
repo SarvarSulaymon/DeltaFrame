@@ -1,0 +1,57 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { parseArgs } from "../src/utils/args.js";
+import {
+  padNumber,
+  parseViewport,
+  slugify,
+  timestampSlug,
+  toPosixPath
+} from "../src/utils/format.js";
+
+test("parseArgs separates command, flags, and positionals", () => {
+  assert.deepEqual(
+    parseArgs([
+      "watch",
+      "--url",
+      "http://localhost:3000",
+      "--name=Landing Flow",
+      "-vh",
+      "extra"
+    ]),
+    {
+      command: "watch",
+      flags: {
+        url: "http://localhost:3000",
+        name: "Landing Flow",
+        v: true,
+        h: true
+      },
+      positionals: ["extra"]
+    }
+  );
+});
+
+test("parseArgs preserves values after -- as positionals", () => {
+  assert.deepEqual(parseArgs(["review", "--", "--not-a-flag", "trace-dir"]), {
+    command: "review",
+    flags: {},
+    positionals: ["--not-a-flag", "trace-dir"]
+  });
+});
+
+test("format helpers produce stable trace-friendly values", () => {
+  assert.equal(padNumber(7), "0007");
+  assert.equal(slugify("  Landing Flow: Step #2!  "), "landing-flow-step-2");
+  assert.equal(slugify("!!!", "fallback"), "fallback");
+  assert.equal(timestampSlug(new Date("2026-06-06T17:04:05.123Z")), "2026-06-06-17-04-05");
+  assert.equal(toPosixPath("frames\\0001.png"), "frames/0001.png");
+});
+
+test("parseViewport accepts WIDTHxHEIGHT and rejects invalid input", () => {
+  assert.deepEqual(parseViewport("1440x900"), { width: 1440, height: 900 });
+  assert.throws(
+    () => parseViewport("wide"),
+    /Invalid viewport "wide"/
+  );
+});

@@ -20,10 +20,14 @@ sudo npx playwright install-deps chromium
 ```bash
 node ./bin/deltaframe.js --help
 node ./bin/deltaframe.js doctor
+npm run check
+npm test
 node ./bin/deltaframe.js doctor --browser
 node ./bin/deltaframe.js watch --url http://localhost:3000 --headed
 node ./bin/deltaframe.js review
 ```
+
+`npm test` uses Node's built-in test runner and avoids launching a browser. Use `npm run test:browser` only when Chromium has been installed with `npx playwright install chromium`; on WSL/Ubuntu, `sudo npx playwright install-deps chromium` may also be required.
 
 ## Local Fixture
 

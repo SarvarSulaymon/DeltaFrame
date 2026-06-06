@@ -52,6 +52,23 @@ During local development you can run the CLI directly:
 node ./bin/deltaframe.js --help
 ```
 
+## Development Checks
+
+```bash
+npm run doctor
+npm run check
+npm test
+```
+
+Browser launch smoke testing is opt-in because it needs a local Playwright browser install:
+
+```bash
+npx playwright install chromium
+npm run test:browser
+```
+
+On WSL/Ubuntu, run `sudo npx playwright install-deps chromium` if Chromium needs system libraries.
+
 ## Quick Start
 
 Start your app first, then run:

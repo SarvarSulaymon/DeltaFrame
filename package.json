@@ -7,9 +7,12 @@
     "deltaframe": "./bin/deltaframe.js"
   },
   "scripts": {
+    "check": "node ./scripts/check-syntax.js",
     "doctor": "node ./bin/deltaframe.js doctor",
     "help": "node ./bin/deltaframe.js --help",
-    "smoke": "node ./bin/deltaframe.js doctor"
+    "smoke": "node ./bin/deltaframe.js doctor",
+    "test": "node --test",
+    "test:browser": "node ./bin/deltaframe.js doctor --browser"
   },
   "keywords": [
     "codex",
