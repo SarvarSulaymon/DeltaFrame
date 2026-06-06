@@ -29,7 +29,7 @@ DeltaFrame should stay narrow: a helper for visual state memory during AI-assist
 
 ## 0.3 Agent Workflow
 
-- [ ] stronger MCP resource support
+- [x] stronger MCP resource support
 - [ ] prompt templates for UI review
 - [ ] Codex plugin marketplace polish
 - [ ] trace annotations for human feedback

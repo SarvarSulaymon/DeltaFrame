@@ -31,6 +31,104 @@ test("MCP initialize and tools/list advertise DeltaFrame tools", async () => {
   assert.equal(client.stderr.join(""), "");
 });
 
+test("MCP resources/list includes trace summary and state index resources", async () => {
+  const traceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "deltaframe-mcp-resources-"));
+  const traceDir = await writeFixtureTrace(traceRoot);
+  const baseUri = traceResourceBase(traceDir);
+  const client = startMcpClient(traceRoot);
+
+  try {
+    const response = await client.request({ method: "resources/list" });
+    const resources = response.result.resources;
+    const uris = resources.map((resource) => resource.uri);
+
+    assert.equal(uris.includes(baseUri), true);
+    assert.equal(uris.includes(`${baseUri}/summary`), true);
+    assert.equal(uris.includes(`${baseUri}/states`), true);
+    assert.equal(resources.find((resource) => resource.uri === `${baseUri}/summary`).mimeType, "text/markdown");
+    assert.equal(resources.find((resource) => resource.uri === `${baseUri}/states`).mimeType, "application/json");
+  } finally {
+    client.close();
+  }
+});
+
+test("MCP resources/templates/list advertises DeltaFrame resource URI patterns", async () => {
+  const traceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "deltaframe-mcp-templates-"));
+  const client = startMcpClient(traceRoot);
+
+  try {
+    const response = await client.request({ method: "resources/templates/list" });
+    const templates = response.result.resourceTemplates.map((template) => template.uriTemplate);
+
+    assert.equal(templates.includes("deltaframe://trace/{encodedTraceDir}"), true);
+    assert.equal(templates.includes("deltaframe://trace/{encodedTraceDir}/summary"), true);
+    assert.equal(templates.includes("deltaframe://trace/{encodedTraceDir}/states"), true);
+    assert.equal(templates.includes("deltaframe://trace/{encodedTraceDir}/state/{stateId}"), true);
+    assert.equal(templates.includes("deltaframe://trace/{encodedTraceDir}/state/{stateId}/image"), true);
+    assert.equal(templates.includes("deltaframe://trace/{encodedTraceDir}/state/{stateId}/diff"), true);
+  } finally {
+    client.close();
+  }
+});
+
+test("MCP resources/read returns summary, states, per-state JSON, and image blobs", async () => {
+  const traceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "deltaframe-mcp-read-resources-"));
+  const traceDir = await writeFixtureTrace(traceRoot);
+  const baseUri = traceResourceBase(traceDir);
+  const client = startMcpClient(traceRoot);
+
+  try {
+    const fullTrace = await client.request({
+      method: "resources/read",
+      params: { uri: baseUri }
+    });
+    assert.equal(fullTrace.result.contents[0].mimeType, "application/json");
+    assert.equal(JSON.parse(fullTrace.result.contents[0].text).states.length, 2);
+
+    const summary = await client.request({
+      method: "resources/read",
+      params: { uri: `${baseUri}/summary` }
+    });
+    assert.equal(summary.result.contents[0].mimeType, "text/markdown");
+    assert.match(summary.result.contents[0].text, /# Fixture Trace/);
+    assert.match(summary.result.contents[0].text, /0002 changed/);
+
+    const states = await client.request({
+      method: "resources/read",
+      params: { uri: `${baseUri}/states` }
+    });
+    const stateIndex = JSON.parse(states.result.contents[0].text);
+    assert.equal(states.result.contents[0].mimeType, "application/json");
+    assert.equal(stateIndex.stateCount, 2);
+    assert.equal(stateIndex.states[1].resources.image, `${baseUri}/state/0002/image`);
+    assert.equal(stateIndex.states[1].resources.diff, `${baseUri}/state/0002/diff`);
+
+    const state = await client.request({
+      method: "resources/read",
+      params: { uri: `${baseUri}/state/0002` }
+    });
+    const stateDetails = JSON.parse(state.result.contents[0].text);
+    assert.equal(stateDetails.state.id, "0002");
+    assert.equal(stateDetails.resources.diff, `${baseUri}/state/0002/diff`);
+
+    const image = await client.request({
+      method: "resources/read",
+      params: { uri: `${baseUri}/state/0002/image` }
+    });
+    assert.equal(image.result.contents[0].mimeType, "image/png");
+    assert.equal(image.result.contents[0].blob, FIXTURE_PNG_BASE64);
+
+    const diff = await client.request({
+      method: "resources/read",
+      params: { uri: `${baseUri}/state/0002/diff` }
+    });
+    assert.equal(diff.result.contents[0].mimeType, "image/png");
+    assert.equal(diff.result.contents[0].blob, FIXTURE_PNG_BASE64);
+  } finally {
+    client.close();
+  }
+});
+
 test("MCP rejects trace paths, resources, and capture output outside trace root", async () => {
   const traceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "deltaframe-mcp-root-"));
   const outsideRoot = await fs.mkdtemp(path.join(os.tmpdir(), "deltaframe-mcp-outside-"));
@@ -58,6 +156,12 @@ test("MCP rejects trace paths, resources, and capture output outside trace root"
       params: { uri: `deltaframe://trace/${encodeURIComponent(outsideTrace)}` }
     });
     assert.match(readResource.error.message, /traceDir must stay inside/);
+
+    const readSummaryResource = await client.request({
+      method: "resources/read",
+      params: { uri: `${traceResourceBase(outsideTrace)}/summary` }
+    });
+    assert.match(readSummaryResource.error.message, /traceDir must stay inside/);
 
     const capture = await client.request({
       method: "tools/call",
@@ -106,6 +210,12 @@ test("MCP rejects state image paths that escape the trace directory", async () =
       }
     });
     assert.match(response.error.message, /state image must stay inside/);
+
+    const resource = await client.request({
+      method: "resources/read",
+      params: { uri: `${traceResourceBase(traceDir)}/state/0001/image` }
+    });
+    assert.match(resource.error.message, /state image must stay inside/);
   } finally {
     client.close();
   }
@@ -156,10 +266,57 @@ test("MCP rejects state image symlinks that escape the trace directory", async (
       }
     });
     assert.match(response.error.message, /state image must stay inside/);
+
+    const resource = await client.request({
+      method: "resources/read",
+      params: { uri: `${traceResourceBase(traceDir)}/state/0001/image` }
+    });
+    assert.match(resource.error.message, /state image must stay inside/);
   } finally {
     client.close();
   }
 });
+
+const FIXTURE_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
+
+async function writeFixtureTrace(traceRoot) {
+  const traceDir = path.join(traceRoot, "fixture-trace");
+  await fs.mkdir(path.join(traceDir, "frames"), { recursive: true });
+  await fs.mkdir(path.join(traceDir, "diffs"), { recursive: true });
+  await fs.writeFile(path.join(traceDir, "frames", "0001.png"), Buffer.from(FIXTURE_PNG_BASE64, "base64"));
+  await fs.writeFile(path.join(traceDir, "frames", "0002.png"), Buffer.from(FIXTURE_PNG_BASE64, "base64"));
+  await fs.writeFile(path.join(traceDir, "diffs", "0002.png"), Buffer.from(FIXTURE_PNG_BASE64, "base64"));
+  await fs.writeFile(
+    path.join(traceDir, "trace.json"),
+    `${JSON.stringify(fixtureTrace({
+      states: [
+        {
+          id: "0001",
+          label: "initial",
+          timestampMs: 0,
+          url: "http://localhost:3000/",
+          image: "frames/0001.png"
+        },
+        {
+          id: "0002",
+          label: "changed",
+          route: "/settings",
+          timestampMs: 500,
+          url: "http://localhost:3000/settings",
+          image: "frames/0002.png",
+          diffFromPrevious: "diffs/0002.png",
+          metrics: { ratio: 0.124 }
+        }
+      ]
+    }), null, 2)}\n`,
+    "utf8"
+  );
+  return traceDir;
+}
+
+function traceResourceBase(traceDir) {
+  return `deltaframe://trace/${encodeURIComponent(traceDir)}`;
+}
 
 function startMcpClient(traceRoot) {
   const child = spawn(process.execPath, [

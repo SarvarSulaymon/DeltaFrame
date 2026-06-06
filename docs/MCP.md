@@ -43,6 +43,34 @@ args = ["mcp", "--trace-root", ".deltaframe/traces"]
 
 Restart Codex after changing MCP configuration.
 
+## Resources
+
+DeltaFrame exposes captured traces as MCP resources. The encoded trace directory is the result of `encodeURIComponent(traceDir)`.
+
+Resource URIs:
+
+- `deltaframe://trace/<encoded-trace-dir>` returns the full `trace.json` as `application/json`.
+- `deltaframe://trace/<encoded-trace-dir>/summary` returns a Markdown trace summary as `text/markdown`.
+- `deltaframe://trace/<encoded-trace-dir>/states` returns a compact state index as `application/json`.
+- `deltaframe://trace/<encoded-trace-dir>/state/<stateId>` returns one state's JSON metadata as `application/json`.
+- `deltaframe://trace/<encoded-trace-dir>/state/<stateId>/image` returns that state's PNG screenshot as a base64 `blob` with `mimeType: "image/png"`.
+- `deltaframe://trace/<encoded-trace-dir>/state/<stateId>/diff` returns the previous-state diff PNG as a base64 `blob` with `mimeType: "image/png"` when the trace has one.
+
+`resources/list` lists the full trace JSON, summary, and compact state index for each available trace. It intentionally does not enumerate every per-state image for large traces; discover per-state JSON, image, and diff URIs through `resources/templates/list` and the `/states` index.
+
+`resources/templates/list` advertises these templates:
+
+```text
+deltaframe://trace/{encodedTraceDir}
+deltaframe://trace/{encodedTraceDir}/summary
+deltaframe://trace/{encodedTraceDir}/states
+deltaframe://trace/{encodedTraceDir}/state/{stateId}
+deltaframe://trace/{encodedTraceDir}/state/{stateId}/image
+deltaframe://trace/{encodedTraceDir}/state/{stateId}/diff
+```
+
+All resource reads are constrained to the configured trace root, and image/diff files must remain inside the resolved trace directory.
+
 ## Tools
 
 ### `deltaframe_capture_url`

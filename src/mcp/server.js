@@ -9,6 +9,7 @@ import { findLatestTraceDir, listTraceDirs, readTrace } from "../trace/store.js"
 import { parseViewport } from "../utils/format.js";
 
 const PROTOCOL_VERSION = "2025-06-18";
+const TRACE_RESOURCE_PREFIX = "deltaframe://trace/";
 
 export async function startMcpServer({ traceRoot }) {
   const server = new DeltaFrameMcpServer(traceRoot);
@@ -80,6 +81,8 @@ class DeltaFrameMcpServer {
         return this.callTool(message.params?.name, message.params?.arguments || {});
       case "resources/list":
         return this.listResources();
+      case "resources/templates/list":
+        return this.listResourceTemplates();
       case "resources/read":
         return this.readResource(message.params?.uri);
       default:
@@ -386,32 +389,129 @@ class DeltaFrameMcpServer {
 
   async listResources() {
     const traces = await listTraceDirs(this.traceRoot);
+    const resources = [];
+    for (const trace of traces) {
+      const baseUri = traceResourceBase(trace.path);
+      resources.push(
+        {
+          uri: baseUri,
+          name: trace.name,
+          description: `${trace.states} visual state(s), created ${trace.createdAt}`,
+          mimeType: "application/json"
+        },
+        {
+          uri: `${baseUri}/summary`,
+          name: `${trace.name} summary`,
+          description: `Markdown summary for ${trace.name}`,
+          mimeType: "text/markdown"
+        },
+        {
+          uri: `${baseUri}/states`,
+          name: `${trace.name} states`,
+          description: `Compact state index for ${trace.name}`,
+          mimeType: "application/json"
+        }
+      );
+    }
+
     return {
-      resources: traces.map((trace) => ({
-        uri: `deltaframe://trace/${encodeURIComponent(trace.path)}`,
-        name: trace.name,
-        description: `${trace.states} visual state(s), created ${trace.createdAt}`,
-        mimeType: "application/json"
-      }))
+      resources
+    };
+  }
+
+  listResourceTemplates() {
+    return {
+      resourceTemplates: [
+        {
+          uriTemplate: "deltaframe://trace/{encodedTraceDir}",
+          name: "DeltaFrame trace JSON",
+          description: "Full trace.json for a DeltaFrame trace directory.",
+          mimeType: "application/json"
+        },
+        {
+          uriTemplate: "deltaframe://trace/{encodedTraceDir}/summary",
+          name: "DeltaFrame trace summary",
+          description: "Markdown summary of a DeltaFrame trace.",
+          mimeType: "text/markdown"
+        },
+        {
+          uriTemplate: "deltaframe://trace/{encodedTraceDir}/states",
+          name: "DeltaFrame trace state index",
+          description: "Compact JSON index of states in a DeltaFrame trace.",
+          mimeType: "application/json"
+        },
+        {
+          uriTemplate: "deltaframe://trace/{encodedTraceDir}/state/{stateId}",
+          name: "DeltaFrame state JSON",
+          description: "JSON metadata for a single captured visual state.",
+          mimeType: "application/json"
+        },
+        {
+          uriTemplate: "deltaframe://trace/{encodedTraceDir}/state/{stateId}/image",
+          name: "DeltaFrame state image",
+          description: "PNG screenshot for a single captured visual state.",
+          mimeType: "image/png"
+        },
+        {
+          uriTemplate: "deltaframe://trace/{encodedTraceDir}/state/{stateId}/diff",
+          name: "DeltaFrame previous-state diff",
+          description: "PNG diff from the previous captured state, when available.",
+          mimeType: "image/png"
+        }
+      ]
     };
   }
 
   async readResource(uri) {
-    if (!uri?.startsWith("deltaframe://trace/")) {
+    const resource = parseTraceResourceUri(uri);
+    if (!resource) {
       throw new Error(`Unsupported resource URI: ${uri}`);
     }
-    const traceDir = decodeURIComponent(uri.slice("deltaframe://trace/".length));
-    const resolvedTraceDir = await this.resolveTraceDir(traceDir);
+
+    const resolvedTraceDir = await this.resolveTraceDir(resource.traceDir);
     const trace = await readTrace(resolvedTraceDir);
-    return {
-      contents: [
-        {
-          uri,
-          mimeType: "application/json",
-          text: JSON.stringify(trace, null, 2)
-        }
-      ]
-    };
+    const baseUri = traceResourceBase(resolvedTraceDir);
+
+    if (resource.kind === "trace") {
+      return {
+        contents: [
+          {
+            uri,
+            mimeType: "application/json",
+            text: JSON.stringify(trace, null, 2)
+          }
+        ]
+      };
+    }
+
+    if (resource.kind === "summary") {
+      return textResource(uri, "text/markdown", buildSummaryMarkdown(resolvedTraceDir, trace));
+    }
+
+    if (resource.kind === "states") {
+      return textResource(uri, "application/json", JSON.stringify(buildStateIndex(resolvedTraceDir, trace, baseUri), null, 2));
+    }
+
+    const { state } = await this.findState(resolvedTraceDir, resource.stateId);
+
+    if (resource.kind === "state") {
+      return textResource(uri, "application/json", JSON.stringify(buildStateDetails(resolvedTraceDir, trace, state, baseUri), null, 2));
+    }
+
+    if (resource.kind === "stateImage") {
+      const image = await readTraceFile(resolvedTraceDir, state.image, "state image");
+      return blobResource(uri, "image/png", image);
+    }
+
+    if (resource.kind === "stateDiff") {
+      if (!state.diffFromPrevious) {
+        throw new Error(`State ${state.id} does not have a previous diff image.`);
+      }
+      const diff = await readTraceFile(resolvedTraceDir, state.diffFromPrevious, "state diff");
+      return blobResource(uri, "image/png", diff);
+    }
+
+    throw new Error(`Unsupported resource URI: ${uri}`);
   }
 
   async resolveTraceDir(traceDir) {
@@ -476,6 +576,95 @@ class DeltaFrameMcpServer {
       error: { code, message }
     });
   }
+}
+
+function parseTraceResourceUri(uri) {
+  if (typeof uri !== "string" || !uri.startsWith(TRACE_RESOURCE_PREFIX)) {
+    return undefined;
+  }
+
+  const rest = uri.slice(TRACE_RESOURCE_PREFIX.length);
+  const [encodedTraceDir, ...suffix] = rest.split("/");
+  if (!encodedTraceDir) return undefined;
+
+  let traceDir;
+  try {
+    traceDir = decodeURIComponent(encodedTraceDir);
+  } catch {
+    return undefined;
+  }
+
+  if (!suffix.length) {
+    return { kind: "trace", traceDir };
+  }
+
+  if (suffix.length === 1 && suffix[0] === "summary") {
+    return { kind: "summary", traceDir };
+  }
+
+  if (suffix.length === 1 && suffix[0] === "states") {
+    return { kind: "states", traceDir };
+  }
+
+  if (suffix[0] !== "state" || suffix.length < 2 || suffix.length > 3) {
+    return undefined;
+  }
+
+  let stateId;
+  try {
+    stateId = decodeURIComponent(suffix[1]);
+  } catch {
+    return undefined;
+  }
+  if (!stateId || stateId.includes("/") || stateId.includes("\\")) {
+    return undefined;
+  }
+
+  if (suffix.length === 2) {
+    return { kind: "state", traceDir, stateId };
+  }
+
+  if (suffix[2] === "image") {
+    return { kind: "stateImage", traceDir, stateId };
+  }
+
+  if (suffix[2] === "diff") {
+    return { kind: "stateDiff", traceDir, stateId };
+  }
+
+  return undefined;
+}
+
+function traceResourceBase(traceDir) {
+  return `${TRACE_RESOURCE_PREFIX}${encodeURIComponent(traceDir)}`;
+}
+
+function stateResourceBase(baseUri, stateId) {
+  return `${baseUri}/state/${encodeURIComponent(stateId)}`;
+}
+
+function textResource(uri, mimeType, text) {
+  return {
+    contents: [
+      {
+        uri,
+        mimeType,
+        text
+      }
+    ]
+  };
+}
+
+function blobResource(uri, mimeType, buffer) {
+  return {
+    contents: [
+      {
+        uri,
+        mimeType,
+        blob: buffer.toString("base64")
+      }
+    ]
+  };
 }
 
 function resolveTraceFile(traceDir, filePath, label) {
@@ -553,6 +742,101 @@ function buildSummary(traceDir, trace) {
     }
   }
   return lines.join("\n");
+}
+
+function buildSummaryMarkdown(traceDir, trace) {
+  const states = trace.states || [];
+  const lines = [];
+  lines.push(`# ${trace.name}`);
+  lines.push("");
+  lines.push(`- Path: \`${traceDir}\``);
+  lines.push(`- Source: ${trace.source?.url || "unknown"}`);
+  lines.push(`- Created: ${trace.createdAt || "unknown"}`);
+  lines.push(`- States: ${states.length}`);
+  lines.push(`- Issue groups: ${states.reduce((total, state) => total + (state.issues?.length || 0), 0)}`);
+  lines.push("");
+  lines.push("## States");
+  lines.push("");
+
+  for (const state of states) {
+    const changed = state.metrics ? `${(state.metrics.ratio * 100).toFixed(3)}% changed` : "initial";
+    const route = state.route ? `, route ${state.route}` : "";
+    lines.push(`- **${state.id} ${state.label}**: ${changed}${route}`);
+    lines.push(`  - URL: ${state.url}`);
+    if (state.image) {
+      lines.push(`  - Image: \`${state.image}\``);
+    }
+    if (state.diffFromPrevious) {
+      lines.push(`  - Previous diff: \`${state.diffFromPrevious}\``);
+    }
+    for (const issue of state.issues || []) {
+      lines.push(`  - Issue: ${formatIssueGroup(issue)}`);
+    }
+  }
+
+  return lines.join("\n");
+}
+
+function buildStateIndex(traceDir, trace, baseUri) {
+  const states = trace.states || [];
+  return {
+    traceDir,
+    name: trace.name,
+    createdAt: trace.createdAt,
+    source: {
+      url: trace.source?.url,
+      finalUrl: trace.source?.finalUrl,
+      viewport: trace.source?.viewport,
+      fullPage: Boolean(trace.source?.fullPage)
+    },
+    stateCount: states.length,
+    states: states.map((state) => compactState(traceDir, state, baseUri))
+  };
+}
+
+function buildStateDetails(traceDir, trace, state, baseUri) {
+  return {
+    traceDir,
+    trace: {
+      name: trace.name,
+      createdAt: trace.createdAt,
+      source: trace.source
+    },
+    state,
+    resources: stateResourceLinks(traceDir, state, baseUri)
+  };
+}
+
+function compactState(traceDir, state, baseUri) {
+  return {
+    id: state.id,
+    label: state.label,
+    route: state.route || null,
+    timestampMs: state.timestampMs,
+    url: state.url,
+    changedRatio: state.metrics?.ratio ?? null,
+    issueCount: state.issues?.length || 0,
+    resources: stateResourceLinks(traceDir, state, baseUri)
+  };
+}
+
+function stateResourceLinks(traceDir, state, baseUri) {
+  const stateBaseUri = stateResourceBase(baseUri, state.id);
+  const resources = {
+    json: stateBaseUri
+  };
+
+  if (state.image) {
+    resolveTraceFile(traceDir, state.image, "state image");
+    resources.image = `${stateBaseUri}/image`;
+  }
+
+  if (state.diffFromPrevious) {
+    resolveTraceFile(traceDir, state.diffFromPrevious, "state diff");
+    resources.diff = `${stateBaseUri}/diff`;
+  }
+
+  return resources;
 }
 
 function buildTraceMetadata(traceDir, trace) {
