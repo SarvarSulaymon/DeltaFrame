@@ -33,31 +33,53 @@ local URL
 
 Desktop/window capture is intentionally later. The first useful version should be small, stable, and easy to reason about.
 
-## Install
+## Install From Source Today
+
+Use this path while the MVP is being tested locally.
 
 ```bash
 npm install
 npx playwright install chromium
 ```
 
-On WSL/Ubuntu, Chromium may also need system libraries:
+On WSL/Ubuntu, Chromium may also need system libraries. If `doctor --browser` or `watch` cannot launch Chromium, run:
 
 ```bash
 sudo npx playwright install-deps chromium
 ```
 
-During local development you can run the CLI directly:
+Run the CLI directly from the checkout:
 
 ```bash
 node ./bin/deltaframe.js --help
 ```
 
+If you want the `deltaframe` command available during local development, link it first:
+
+```bash
+npm link
+deltaframe --help
+```
+
+## Future npm Usage
+
+The package is being prepared for the scoped npm name `@sarvarsulaymon/deltaframe`. The unscoped `deltaframe` package name is already used by an unrelated project.
+
+After the package is published, global usage should look like:
+
+```bash
+npm install -g @sarvarsulaymon/deltaframe
+deltaframe --help
+```
+
+The CLI binary name remains `deltaframe`.
+
 ## Development Checks
 
 ```bash
-npm run doctor
 npm run check
 npm test
+npm run doctor
 ```
 
 Browser launch smoke testing is opt-in because it needs a local Playwright browser install:
@@ -71,7 +93,13 @@ On WSL/Ubuntu, run `sudo npx playwright install-deps chromium` if Chromium needs
 
 ## Quick Start
 
-Start your app first, then run:
+Start your app first, then run from a source checkout:
+
+```bash
+node ./bin/deltaframe.js watch --url http://localhost:3000 --name landing-flow --headed
+```
+
+If you already ran `npm link` or installed the future npm package globally, use:
 
 ```bash
 deltaframe watch --url http://localhost:3000 --name landing-flow --headed
@@ -82,13 +110,13 @@ Interact with the opened browser. DeltaFrame samples the page, waits for visual 
 Review the captured trace:
 
 ```bash
-deltaframe review .deltaframe/traces/<trace-folder>
+node ./bin/deltaframe.js review .deltaframe/traces/<trace-folder>
 ```
 
 Or summarize the newest trace:
 
 ```bash
-deltaframe summarize
+node ./bin/deltaframe.js summarize
 ```
 
 ## Output
@@ -131,12 +159,12 @@ Common watch options:
 
 See [docs/CLI.md](docs/CLI.md) for full command details.
 
-## Codex / MCP
+## MCP Setup
 
-Run DeltaFrame as an MCP server:
+From a source checkout, run DeltaFrame as an MCP server with Node:
 
 ```bash
-deltaframe mcp --trace-root .deltaframe/traces
+node ./bin/deltaframe.js mcp --trace-root .deltaframe/traces
 ```
 
 It exposes tools for:
@@ -150,7 +178,7 @@ It exposes tools for:
 - comparing two states
 - summarizing a trace
 
-See [docs/MCP.md](docs/MCP.md) for Codex config examples.
+See [docs/MCP.md](docs/MCP.md) for Codex config examples, including a local-checkout config that points at `bin/deltaframe.js`.
 
 ## Architecture
 

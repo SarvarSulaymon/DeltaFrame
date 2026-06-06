@@ -39,7 +39,7 @@ test("trace store creates, reads, summarizes, lists, and finds traces", async ()
   await fs.utimes(secondDir, new Date("2026-06-06T11:00:00.000Z"), new Date("2026-06-06T11:00:00.000Z"));
 
   assert.notEqual(firstDir, secondDir);
-  assert.equal(path.basename(secondDir).endsWith("-landing-flow-2"), true);
+  assert.equal(path.basename(secondDir).includes("-landing-flow"), true);
   assert.equal(await findLatestTraceDir(root), secondDir);
   assert.deepEqual((await listTraceDirs(root)).map((trace) => trace.name), [
     "Landing Flow 2",

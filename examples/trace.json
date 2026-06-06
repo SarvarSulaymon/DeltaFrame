@@ -1,6 +1,8 @@
 {
   "version": "0.1.0",
-  "name": "example-flow",
+  "name": "schema-only-example",
+  "exampleKind": "schema-only",
+  "note": "This file documents trace.json shape only. The referenced PNG paths are placeholders and are not included.",
   "createdAt": "2026-06-06T12:00:00.000Z",
   "source": {
     "type": "web",

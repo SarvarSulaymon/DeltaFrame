@@ -1,11 +1,20 @@
 {
-  "name": "deltaframe",
+  "name": "@sarvarsulaymon/deltaframe",
   "version": "0.1.0",
   "description": "Capture meaningful visual state changes from local prototypes for AI-assisted UI iteration.",
   "type": "module",
   "bin": {
     "deltaframe": "./bin/deltaframe.js"
   },
+  "files": [
+    "bin/",
+    "docs/",
+    "examples/",
+    "plugins/",
+    "src/",
+    "LICENSE",
+    "README.md"
+  ],
   "scripts": {
     "check": "node ./scripts/check-syntax.js",
     "doctor": "node ./bin/deltaframe.js doctor",
@@ -23,7 +32,17 @@
     "visual-diff",
     "mcp"
   ],
+  "author": "Sarvarbek Sulaymonov",
   "license": "MIT",
+  "homepage": "https://github.com/SarvarSulaymon/DeltaFrame#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SarvarSulaymon/DeltaFrame.git"
+  },
+  "bugs": {
+    "url": "https://github.com/SarvarSulaymon/DeltaFrame/issues"
+  },
+  "packageManager": "npm@10",
   "engines": {
     "node": ">=20"
   },

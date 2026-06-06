@@ -4,6 +4,14 @@ DeltaFrame includes a local MCP stdio server so Codex can inspect captured visua
 
 ## Start The Server
 
+From a source checkout, run the MCP server through Node:
+
+```bash
+node ./bin/deltaframe.js mcp --trace-root .deltaframe/traces
+```
+
+If you have run `npm link` or installed the package globally, the linked CLI works too:
+
 ```bash
 deltaframe mcp --trace-root .deltaframe/traces
 ```
