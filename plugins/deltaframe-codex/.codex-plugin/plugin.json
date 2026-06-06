@@ -2,5 +2,35 @@
   "name": "deltaframe-codex",
   "version": "0.1.0",
   "description": "Codex guidance for using DeltaFrame visual state traces during UI iteration.",
-  "skills": "./skills/"
+  "author": {
+    "name": "Sarvarbek Sulaymonov",
+    "url": "https://github.com/SarvarSulaymon/DeltaFrame"
+  },
+  "homepage": "https://github.com/SarvarSulaymon/DeltaFrame#readme",
+  "repository": "https://github.com/SarvarSulaymon/DeltaFrame",
+  "license": "MIT",
+  "keywords": [
+    "codex",
+    "deltaframe",
+    "visual-testing",
+    "ui-review"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "DeltaFrame Review Companion",
+    "shortDescription": "Guidance for AI-led UI review from DeltaFrame traces.",
+    "longDescription": "DeltaFrame Review Companion helps Codex use DeltaFrame trace data to prioritize UI issues and generate concrete, minimal frontend improvements.",
+    "developerName": "Sarvarbek Sulaymonov",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Summarize the newest trace and highlight likely UI issues.",
+      "Compare two states and suggest a likely root cause.",
+      "Generate a minimal implementation plan from trace evidence."
+    ],
+    "brandColor": "#0f766e"
+  }
 }

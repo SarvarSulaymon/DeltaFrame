@@ -188,6 +188,26 @@ It exposes tools for:
 
 See [docs/MCP.md](docs/MCP.md) for Codex config examples, including a local-checkout config that points at `bin/deltaframe.js`.
 
+## Codex plugin (repo-local marketplace)
+
+This repository includes a local Codex plugin at `plugins/deltaframe-codex`.
+
+To make it visible in Codex:
+
+1. Add the repo marketplace file:
+
+```bash
+codex plugin marketplace add <repo-root>/.agents/plugins/marketplace.json
+```
+
+2. Install from that marketplace:
+
+```bash
+codex plugin add deltaframe-codex@deltaframe-local
+```
+
+3. In Codex, open the `DeltaFrame Local` marketplace and verify the plugin appears as `DeltaFrame Review Companion`.
+
 ## Architecture
 
 The current architecture is deliberately boring:
