@@ -158,6 +158,12 @@ function buildHtml(initialTrace) {
     }
     h1 { margin: 0; font-size: 22px; line-height: 1.2; }
     .sub { color: var(--muted); margin-top: 6px; font-size: 14px; }
+    .context-line {
+      margin-top: 8px;
+      color: var(--ink);
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }
     .topline {
       display: flex;
       gap: 14px;
@@ -308,6 +314,7 @@ function buildHtml(initialTrace) {
       </div>
     </div>
     <div class="sub" id="traceSub"></div>
+    <div class="context-line" id="contextLine"></div>
     <div class="status-line" id="statusLine"></div>
   </header>
   <main>
@@ -326,6 +333,7 @@ function buildHtml(initialTrace) {
     const statesEl = document.getElementById("states");
     const detailsEl = document.getElementById("details");
     const traceSubEl = document.getElementById("traceSub");
+    const contextLineEl = document.getElementById("contextLine");
     const statusLineEl = document.getElementById("statusLine");
     const toggleStateEl = document.getElementById("toggleState");
     const exportTraceEl = document.getElementById("exportTrace");
@@ -362,6 +370,9 @@ function buildHtml(initialTrace) {
       traceSubEl.textContent =
         trace.name + " - " + counts.kept + " kept / " + counts.ignored + " ignored - " + trace.source.url;
       const state = selectedState();
+      contextLineEl.textContent =
+        "Viewing state " + (selected + 1) + " of " + trace.states.length + ": " +
+        state.id + " " + state.label + " - " + (isIgnored(state) ? "ignored" : "kept");
       toggleStateEl.textContent = isIgnored(state) ? "Keep State" : "Ignore State";
       exportTraceEl.disabled = busy || counts.kept === 0;
       toggleStateEl.disabled = busy;

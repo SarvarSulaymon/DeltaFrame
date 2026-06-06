@@ -201,8 +201,8 @@ This is an initial MVP scaffold. It is useful enough to start testing against re
 Next priorities:
 
 1. harden the capture loop against animations and hot reloads
-2. dogfood the MCP proof loop on a real local prototype: capture, curate/export if useful, and have Codex make one concrete UI improvement from the trace
-3. improve labels with route, action, and DOM metadata
+2. improve labels with route, action, and DOM metadata
+3. group console and network errors in traces
 4. add before/after recapture prompts for Codex
 5. add desktop/region capture mode
 
