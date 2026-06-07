@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import readline from "node:readline";
+import { normalizeRawFrameOptions } from "../capture/rawFrames.js";
 import { watchWeb } from "../capture/playwrightWatcher.js";
 import { formatIssueGroup } from "../diagnostics/issues.js";
 import { diffPngBuffers } from "../diff/imageDiff.js";
@@ -104,6 +105,8 @@ class DeltaFrameMcpServer {
             name: { type: "string", description: "Human name for the trace." },
             durationMs: { type: "number", description: "Capture duration in milliseconds. Must be positive for MCP calls." },
             intervalMs: { type: "number", description: "Screenshot sample interval in milliseconds." },
+            fps: { type: "number", description: "Raw capture frames per second. Implies rawFrames and sets intervalMs." },
+            rawFrames: { type: "boolean", description: "Archive every sampled screenshot under raw/ for later keyframe distillation." },
             idleMs: { type: "number", description: "Wait after detecting a change before saving a stable frame." },
             minChangedRatio: { type: "number", description: "Minimum changed-pixel ratio required to save a new state." },
             pixelThreshold: { type: "number", description: "Per-pixel diff sensitivity passed to pixelmatch." },
@@ -285,12 +288,17 @@ class DeltaFrameMcpServer {
     }
 
     const outDir = await this.resolveOutputRoot(args.outDir);
+    const rawFrameOptions = normalizeRawFrameOptions({
+      enabled: booleanOption(args.rawFrames, false, "rawFrames"),
+      fps: args.fps,
+      intervalMs: numberOption(args.intervalMs, 200, "intervalMs")
+    });
     const result = await watchWeb({
       url: args.url,
       name: stringOption(args.name),
       outDir,
-      intervalMs: numberOption(args.intervalMs, 200, "intervalMs"),
-      idleMs: numberOption(args.idleMs, 350, "idleMs"),
+      intervalMs: rawFrameOptions.intervalMs,
+      idleMs: numberOption(args.idleMs, rawFrameOptions.enabled ? 0 : 350, "idleMs"),
       durationMs,
       minChangedRatio: numberOption(args.minChangedRatio, 0.003, "minChangedRatio"),
       pixelThreshold: numberOption(args.pixelThreshold, 0.12, "pixelThreshold"),
@@ -300,12 +308,15 @@ class DeltaFrameMcpServer {
       headed: booleanOption(args.headed, false, "headed"),
       channel: stringOption(args.channel),
       verbose: false,
-      masks: normalizeMaskRegions(args.masks)
+      masks: normalizeMaskRegions(args.masks),
+      rawFrames: rawFrameOptions.enabled,
+      rawFps: rawFrameOptions.fps
     });
 
     return jsonResult({
       traceDir: result.traceDir,
       stateCount: result.trace.states.length,
+      rawFrameCount: result.trace.rawFrames?.length || 0,
       summary: buildSummary(result.traceDir, result.trace),
       metadata: buildTraceMetadata(result.traceDir, result.trace)
     });
@@ -362,6 +373,7 @@ class DeltaFrameMcpServer {
       timestampMs: state.timestampMs,
       url: state.url,
       changedRatio: state.metrics?.ratio ?? null,
+      keyframe: state.keyframe || null,
       annotation: annotationFor(curation, state.id) || null,
       issues: state.issues || [],
       image: resolveTraceFile(traceDir, state.image, "state image"),
@@ -770,6 +782,12 @@ function buildSummary(traceDir, trace, curation = {}) {
   lines.push(`Path: ${traceDir}`);
   lines.push(`Source: ${trace.source.url}`);
   lines.push(`States: ${trace.states.length}`);
+  if (trace.rawFrames?.length) {
+    lines.push(`Raw frames: ${trace.rawFrames.length}`);
+  }
+  if (trace.settings?.keyframes?.strategy) {
+    lines.push(`Keyframe strategy: ${trace.settings.keyframes.strategy}`);
+  }
   const annotations = annotationCount(curation);
   if (annotations) {
     lines.push(`Annotations: ${annotations}`);
@@ -779,6 +797,9 @@ function buildSummary(traceDir, trace, curation = {}) {
     const changed = state.metrics ? `${(state.metrics.ratio * 100).toFixed(3)}% changed` : "initial";
     const route = state.route ? `, route ${state.route}` : "";
     lines.push(`- ${state.id} ${state.label}: ${changed}${route}, ${state.url}`);
+    if (state.keyframe?.selectionReasons?.length) {
+      lines.push(`  keyframe: ${state.keyframe.selectionReasons.join(", ")} from ${state.keyframe.rawFrameId}`);
+    }
     const annotation = annotationFor(curation, state.id);
     if (annotation) {
       lines.push(`  annotation: ${annotation}`);
@@ -799,6 +820,10 @@ function buildSummaryMarkdown(traceDir, trace, curation = {}) {
   lines.push(`- Source: ${trace.source?.url || "unknown"}`);
   lines.push(`- Created: ${trace.createdAt || "unknown"}`);
   lines.push(`- States: ${states.length}`);
+  lines.push(`- Raw frames: ${trace.rawFrames?.length || 0}`);
+  if (trace.settings?.keyframes?.strategy) {
+    lines.push(`- Keyframe strategy: ${trace.settings.keyframes.strategy}`);
+  }
   lines.push(`- Annotations: ${annotationCount(curation)}`);
   lines.push(`- Issue groups: ${states.reduce((total, state) => total + (state.issues?.length || 0), 0)}`);
   lines.push("");
@@ -812,6 +837,9 @@ function buildSummaryMarkdown(traceDir, trace, curation = {}) {
     lines.push(`  - URL: ${state.url}`);
     if (state.image) {
       lines.push(`  - Image: \`${state.image}\``);
+    }
+    if (state.keyframe?.selectionReasons?.length) {
+      lines.push(`  - Keyframe: ${state.keyframe.selectionReasons.join(", ")} from \`${state.keyframe.rawFrameId}\``);
     }
     if (state.diffFromPrevious) {
       lines.push(`  - Previous diff: \`${state.diffFromPrevious}\``);
@@ -841,6 +869,8 @@ function buildStateIndex(traceDir, trace, baseUri, curation = {}) {
       fullPage: Boolean(trace.source?.fullPage)
     },
     stateCount: states.length,
+    rawFrameCount: trace.rawFrames?.length || 0,
+    keyframeStrategy: trace.settings?.keyframes?.strategy || null,
     annotationCount: annotationCount(curation),
     states: states.map((state) => compactState(traceDir, state, baseUri, curation))
   };
@@ -868,6 +898,7 @@ function compactState(traceDir, state, baseUri, curation = {}) {
     timestampMs: state.timestampMs,
     url: state.url,
     changedRatio: state.metrics?.ratio ?? null,
+    keyframe: state.keyframe || null,
     annotation: annotationFor(curation, state.id) || null,
     issueCount: state.issues?.length || 0,
     resources: stateResourceLinks(traceDir, state, baseUri)
@@ -910,6 +941,8 @@ function buildTraceMetadata(traceDir, trace, curation = {}) {
     },
     settings: trace.settings || {},
     stateCount: states.length,
+    rawFrameCount: trace.rawFrames?.length || 0,
+    keyframeStrategy: trace.settings?.keyframes?.strategy || null,
     annotationCount: annotationCount(curation),
     issueGroupCount: states.reduce((total, state) => total + (state.issues?.length || 0), 0),
     firstStateId: states[0]?.id,

@@ -48,3 +48,4 @@ The source imports packages normally. It also supports runtime-provided `NODE_PA
 - Send diagnostics to stderr.
 - Do not add cloud upload behavior to the core path.
 - Prefer small, explainable capture heuristics before adding machine learning.
+- Preserve the product intent: capture enough visual evidence first, then distill meaningful keyframes for Codex.

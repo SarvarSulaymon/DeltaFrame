@@ -2,6 +2,8 @@
 
 DeltaFrame includes a local MCP stdio server so Codex can inspect captured visual traces without manually pasting every screenshot.
 
+Product intent: MCP should eventually expose selected keyframes from a dense capture as the primary Codex input. The current tools expose sparse saved states from the existing trace format.
+
 ## Start The Server
 
 From a source checkout, run the MCP server through Node:
@@ -77,6 +79,8 @@ Trace summaries, state indexes, and per-state JSON include human annotations fro
 
 Captures meaningful visual state changes from a URL and writes a new trace.
 
+Current implementation captures sparse changed states. The next intended behavior is dense raw capture followed by keyframe distillation.
+
 Input:
 
 ```json
@@ -85,6 +89,8 @@ Input:
   "name": "landing-flow",
   "durationMs": 15000,
   "intervalMs": 200,
+  "fps": 30,
+  "rawFrames": true,
   "idleMs": 350,
   "minChangedRatio": 0.003,
   "pixelThreshold": 0.12,
@@ -104,10 +110,15 @@ Only `url` is required. The MCP capture call must use a positive `durationMs`; u
 
 `masks` may be an array of `{ "x", "y", "width", "height", "label" }` rectangles or a JSON string containing that array. Masks are applied only while diffing; saved screenshots remain unmasked. Captures record normalized masks in `trace.json` under `settings.masks`.
 
+Use `rawFrames: true` or `fps` when Codex needs a dense visual timeline instead of only sparse changed states. Raw frames are written under `raw/` and listed in `trace.rawFrames`; selected state images still live under `frames/`.
+
+When raw capture is enabled, `deltaframe_list_states`, state resources, and image resources expose the selected keyframes, not every raw frame. Each selected state includes `keyframe.rawFrameId` and `keyframe.selectionReasons` when available.
+
 Returns JSON text with:
 
 - `traceDir`
 - `stateCount`
+- `rawFrameCount`
 - `summary`
 - `metadata`
 

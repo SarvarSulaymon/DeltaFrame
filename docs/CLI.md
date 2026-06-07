@@ -16,6 +16,8 @@ node ./bin/deltaframe.js
 
 Capture meaningful visual state changes from a local web prototype.
 
+Current behavior is sparse: `watch` samples the page and saves changed states during capture. The target behavior is denser: record many raw frames first, then distill meaningful keyframes after capture. See [PRODUCT_INTENT.md](PRODUCT_INTENT.md).
+
 ```bash
 deltaframe watch --url http://localhost:3000 --name landing-flow --headed
 ```
@@ -29,6 +31,8 @@ Options:
 | `--out` | `.deltaframe/traces` | Root directory for captured traces. |
 | `--duration` | `15000` | Capture duration in milliseconds. Use `0` to run until Ctrl+C. |
 | `--interval` | `200` | Screenshot sample interval in milliseconds. |
+| `--fps` | none | Raw capture frames per second. Implies `--raw-frames` and sets the sample interval. |
+| `--raw-frames` | `false` | Archive every sampled screenshot under `raw/`; selected keyframes are then written to `frames/`. |
 | `--idle` | `350` | Time to wait after detecting a change before saving a stable frame. |
 | `--min-ratio` | `0.003` | Minimum changed-pixel ratio required to save a new state. |
 | `--pixel-threshold` | `0.12` | Per-pixel sensitivity passed to pixelmatch. |
@@ -56,6 +60,7 @@ Examples:
 deltaframe watch --url http://localhost:5173 --name onboarding --duration 30000 --headed
 deltaframe watch --url file:///Users/me/prototype/index.html --full-page
 deltaframe watch --url http://localhost:3000 --min-ratio 0.001 --idle 500
+deltaframe watch --url http://localhost:3000 --duration 10000 --fps 30 --idle 0
 deltaframe watch --url http://localhost:3000 --mask '[{"x":0,"y":0,"width":160,"height":40,"label":"clock"}]'
 deltaframe watch --url http://localhost:3000 --mask-file examples/masks.json
 ```
@@ -69,6 +74,8 @@ Mask rectangles use screenshot pixel coordinates:
 ```
 
 Masks affect diffing only. DeltaFrame still saves the original unmasked screenshots so humans and agents can inspect the real UI, while `trace.json` records the applied masks under `settings.masks`.
+
+With `--raw-frames` or `--fps`, `raw/` keeps the dense timeline and `frames/` contains post-capture selected keyframes. The selector keeps the first frame, route changes, visually changed frames, and the last frame, while skipping duplicates.
 
 ## `desktop`
 

@@ -6,6 +6,8 @@ It watches a local prototype, captures many screenshots, keeps only meaningful v
 
 The goal is simple: help the coding agent see the UI flow closer to the way a human saw it happen.
 
+Important correction: the core product should be a visual memory condenser, not a visual regression tool. The ideal loop is dense capture first, then keyframe distillation for Codex. See [docs/PRODUCT_INTENT.md](docs/PRODUCT_INTENT.md).
+
 ## Why This Exists
 
 When you work on a prototype, important UI problems often happen between two static screenshots:
@@ -32,6 +34,8 @@ local URL
 ```
 
 Desktop/window capture is intentionally later. The first useful version should be small, stable, and easy to reason about.
+
+The current implementation saves sparse changed states while capturing. That is useful for early testing, but it is not the final desired behavior. The next product correction is to record raw frames at a configurable frame rate, then select meaningful keyframes after capture.
 
 ## Install From Source Today
 
@@ -105,7 +109,7 @@ If you already ran `npm link` or installed the future npm package globally, use:
 deltaframe watch --url http://localhost:3000 --name landing-flow --headed
 ```
 
-Interact with the opened browser. DeltaFrame samples the page, waits for visual changes to settle, and saves only changed states.
+Interact with the opened browser. DeltaFrame samples the page, waits for visual changes to settle, and saves only changed states. Use `--raw-frames` or `--fps 30` to also archive the sampled raw timeline under `raw/` for later keyframe distillation.
 
 In an interactive terminal, press `p` to pause or resume capture without closing the browser, `q` to stop and write the trace, or Ctrl+C to stop. Use `--no-controls` for CI and other non-interactive runs.
 
@@ -147,6 +151,9 @@ node ./bin/deltaframe.js compare .deltaframe/traces/before .deltaframe/traces/af
     0002-changed-001284ms.png
   diffs/
     0001-0002.png
+  raw/                 # optional when --raw-frames or --fps is used
+    raw-000001-initial.png
+    raw-000002-sample.png
 ```
 
 `trace.json` is the source of truth. It records state IDs, timestamps, URLs, screenshot paths, diff paths, changed-pixel metrics, viewport settings, and console warnings/errors observed since the previous state.
@@ -169,6 +176,8 @@ Common watch options:
 ```bash
 --duration 15000        # capture duration in ms, use 0 until Ctrl+C
 --interval 200          # screenshot sample interval in ms
+--fps 30                # raw capture fps; implies --raw-frames
+--raw-frames            # archive sampled screenshots under raw/
 --idle 350              # wait after a change before saving a stable state
 --min-ratio 0.003       # changed-pixel ratio needed to save
 --mask '[{"x":0,"y":0,"width":160,"height":40,"label":"clock"}]'
@@ -241,15 +250,15 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Project Status
 
-This is an initial MVP scaffold. It is useful enough to start testing against real local prototypes, but it is not yet a polished package.
+This is an initial MVP scaffold. It is useful enough to start testing against real local prototypes, but the first real-world test showed an important product gap: sparse live diffing can miss the process a human wanted Codex to see.
 
 Next priorities:
 
-1. harden the capture loop against animations and hot reloads
-2. improve labels with route, action, and DOM metadata
-3. group console and network errors in traces
-4. add before/after recapture prompts for Codex
-5. add desktop/region capture mode
+1. build post-capture keyframe distillation on top of the raw-frame archive
+2. cluster duplicate/stable frames so repeated screens appear once
+3. ignore cursor and other high-noise regions during selection
+4. expose selected keyframes to Codex as the primary MCP surface
+5. keep diffs/review UI as secondary debugging and curation tools
 
 See [docs/ROADMAP.md](docs/ROADMAP.md).
 

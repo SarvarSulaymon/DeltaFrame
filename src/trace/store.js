@@ -231,6 +231,9 @@ export async function writeSummary(traceDir, trace) {
   lines.push(`Source: ${trace.source.url}`);
   lines.push(`Created: ${trace.createdAt}`);
   lines.push(`States: ${trace.states.length}`);
+  if (trace.rawFrames?.length) {
+    lines.push(`Raw frames: ${trace.rawFrames.length}`);
+  }
   lines.push("");
   lines.push("## States");
   lines.push("");
@@ -242,6 +245,12 @@ export async function writeSummary(traceDir, trace) {
     }
     lines.push(`  - URL: ${state.url}`);
     lines.push(`  - Image: ${state.image}`);
+    if (state.keyframe?.selectionReasons?.length) {
+      lines.push(`  - Keyframe: ${state.keyframe.selectionReasons.join(", ")}`);
+      if (state.keyframe.rawFrameId) {
+        lines.push(`  - Raw frame: ${state.keyframe.rawFrameId}`);
+      }
+    }
     if (state.diffFromPrevious) {
       lines.push(`  - Diff: ${state.diffFromPrevious}`);
     }
@@ -316,6 +325,8 @@ export async function listTraceDirs(root = ".deltaframe/traces") {
       path: traceDir,
       createdAt: trace.createdAt,
       states: trace.states?.length || 0,
+      rawFrames: trace.rawFrames?.length || 0,
+      keyframeStrategy: trace.settings?.keyframes?.strategy || null,
       issueGroups: (trace.states || []).reduce((total, state) => total + (state.issues?.length || 0), 0)
     });
   }

@@ -182,6 +182,11 @@ test("MCP resources/read returns summary, states, per-state JSON, and image blob
     assert.equal(stateIndex.stateCount, 2);
     assert.equal(stateIndex.annotationCount, 1);
     assert.equal(stateIndex.states[1].annotation, "Human note for Codex");
+    assert.deepEqual(stateIndex.states[1].keyframe, {
+      rawFrameId: "raw-000003",
+      selectionReasons: ["visual-change"],
+      skippedRawFrameCount: 1
+    });
     assert.equal(stateIndex.states[1].resources.image, `${baseUri}/state/0002/image`);
     assert.equal(stateIndex.states[1].resources.diff, `${baseUri}/state/0002/diff`);
 
@@ -191,6 +196,7 @@ test("MCP resources/read returns summary, states, per-state JSON, and image blob
     });
     const stateDetails = JSON.parse(state.result.contents[0].text);
     assert.equal(stateDetails.state.id, "0002");
+    assert.deepEqual(stateDetails.state.keyframe.selectionReasons, ["visual-change"]);
     assert.equal(stateDetails.annotation, "Human note for Codex");
     assert.equal(stateDetails.resources.diff, `${baseUri}/state/0002/diff`);
 
@@ -382,7 +388,12 @@ async function writeFixtureTrace(traceRoot, options = {}) {
       url: "http://localhost:3000/settings",
       image: "frames/0002.png",
       diffFromPrevious: "diffs/0002.png",
-      metrics: { ratio: 0.124 }
+      metrics: { ratio: 0.124 },
+      keyframe: {
+        rawFrameId: "raw-000003",
+        selectionReasons: ["visual-change"],
+        skippedRawFrameCount: 1
+      }
     }
   ];
   for (const state of states) {

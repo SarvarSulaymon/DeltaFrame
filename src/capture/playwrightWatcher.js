@@ -3,6 +3,7 @@ import path from "node:path";
 import { groupIssueEvents, issueEventsFromState } from "../diagnostics/issues.js";
 import { diffPngBuffers } from "../diff/imageDiff.js";
 import { normalizeMaskRegions } from "../diff/masks.js";
+import { createRawFrameRecorder, selectRawKeyframes } from "./rawFrames.js";
 import { createTraceDir, writeSummary, writeTrace } from "../trace/store.js";
 import { loadPackage } from "../utils/deps.js";
 import { labelWithRoute, padNumber, routeFromUrl, sleep, slugify } from "../utils/format.js";
@@ -81,11 +82,12 @@ export async function watchWeb(options) {
     });
   });
 
-  const startedAt = Date.now();
+  const createdAt = Date.now();
+  let startedAt = createdAt;
   const trace = {
     version: "0.1.0",
     name: options.name || inferNameFromUrl(options.url),
-    createdAt: new Date(startedAt).toISOString(),
+    createdAt: new Date(createdAt).toISOString(),
     source: {
       type: "web",
       url: options.url,
@@ -103,6 +105,8 @@ export async function watchWeb(options) {
     },
     states: []
   };
+
+  let rawRecorder;
 
   let stop = false;
   const stopHandler = () => {
@@ -122,6 +126,19 @@ export async function watchWeb(options) {
     log(`opening ${options.url}`);
     await goto(page, options.url);
     trace.source.finalUrl = page.url();
+    startedAt = Date.now();
+    trace.captureStartedAt = new Date(startedAt).toISOString();
+    rawRecorder = options.rawFrames
+      ? await createRawFrameRecorder({
+        traceDir,
+        trace,
+        startedAt,
+        options: {
+          intervalMs: options.intervalMs,
+          fps: options.rawFps
+        }
+      })
+      : undefined;
 
     await waitWhilePaused();
     if (shouldStop()) {
@@ -130,13 +147,31 @@ export async function watchWeb(options) {
       return { traceDir, trace };
     }
 
+    if (rawRecorder) {
+      return await captureRawTimeline({
+        trace,
+        traceDir,
+        page,
+        options,
+        startedAt,
+        consoleEvents,
+        networkEvents,
+        rawRecorder,
+        shouldStop,
+        waitWhilePaused,
+        masks,
+        log
+      });
+    }
+
     log("capturing initial state");
+    const initialBuffer = await capture(page, options);
     let lastSaved = await saveState({
       trace,
       traceDir,
       page,
       label: "initial",
-      buffer: await capture(page, options),
+      buffer: initialBuffer,
       startedAt,
       consoleEvents,
       consoleCursor: 0,
@@ -169,11 +204,14 @@ export async function watchWeb(options) {
         continue;
       }
 
-      await sleep(options.idleMs);
-      if (shouldStop()) break;
-      if (await waitWhilePaused()) continue;
-
-      const stable = await capture(page, options);
+      const stable = await captureStableFrame({
+        page,
+        options,
+        shouldStop,
+        waitWhilePaused
+      });
+      if (stable === undefined) break;
+      if (stable === null) continue;
       const stableDiff = await diffPngBuffers(lastSaved.buffer, stable, {
         pixelThreshold: options.pixelThreshold,
         masks
@@ -213,6 +251,123 @@ export async function watchWeb(options) {
     controls?.cleanup?.();
     await browser.close().catch(() => {});
   }
+}
+
+async function captureRawTimeline(input) {
+  const {
+    trace,
+    traceDir,
+    page,
+    options,
+    startedAt,
+    consoleEvents,
+    networkEvents,
+    rawRecorder,
+    shouldStop,
+    waitWhilePaused,
+    masks,
+    log
+  } = input;
+
+  log("capturing raw frame timeline");
+  const initialBuffer = await capture(page, options);
+  await rawRecorder.record({
+    page,
+    buffer: initialBuffer,
+    reason: "initial"
+  });
+
+  while (!shouldStop()) {
+    if (options.durationMs > 0 && Date.now() - startedAt >= options.durationMs) {
+      break;
+    }
+
+    await sleep(options.intervalMs);
+    if (shouldStop()) break;
+    if (await waitWhilePaused()) continue;
+
+    const sampleBuffer = await capture(page, options);
+    await rawRecorder.record({
+      page,
+      buffer: sampleBuffer,
+      reason: "sample"
+    });
+  }
+
+  const keyframes = await selectRawKeyframes({
+    traceDir,
+    rawFrames: trace.rawFrames,
+    maxKeyframes: options.maxFrames,
+    minChangedRatio: options.minChangedRatio,
+    pixelThreshold: options.pixelThreshold,
+    masks
+  });
+  trace.settings.keyframes = {
+    strategy: "raw-diff-threshold-v1",
+    count: keyframes.length,
+    minChangedRatio: options.minChangedRatio,
+    maxKeyframes: options.maxFrames
+  };
+
+  let previousState;
+  let consoleCursor = 0;
+  let networkCursor = 0;
+  for (const keyframe of keyframes) {
+    const consoleEndCursor = eventCursorAt(consoleEvents, startedAt, keyframe.frame.timestampMs);
+    const networkEndCursor = eventCursorAt(networkEvents, startedAt, keyframe.frame.timestampMs);
+    previousState = await saveState({
+      trace,
+      traceDir,
+      page,
+      label: labelForKeyframe(keyframe),
+      buffer: keyframe.buffer,
+      previous: previousState,
+      comparison: keyframe.comparison,
+      startedAt,
+      timestampMs: keyframe.frame.timestampMs,
+      url: keyframe.frame.url,
+      keyframe: {
+        rawFrameId: keyframe.frame.id,
+        selectionReasons: keyframe.selectionReasons,
+        skippedRawFrameCount: keyframe.skippedRawFrameCount
+      },
+      consoleEvents,
+      consoleCursor,
+      consoleEndCursor,
+      networkEvents,
+      networkCursor,
+      networkEndCursor
+    });
+    consoleCursor = consoleEndCursor;
+    networkCursor = networkEndCursor;
+  }
+
+  trace.settings.rawFrames.count = trace.rawFrames.length;
+  log("writing final raw trace");
+  await writeTrace(traceDir, trace);
+  await writeSummary(traceDir, trace);
+
+  return { traceDir, trace };
+}
+
+function labelForKeyframe(keyframe) {
+  if (keyframe.selectionReasons.includes("first-frame")) return "first-frame";
+  if (keyframe.selectionReasons.includes("last-frame")) {
+    return `last-frame-${padNumber(keyframe.frame.timestampMs, 6)}ms`;
+  }
+  if (keyframe.selectionReasons.includes("route-change")) {
+    return `route-change-${padNumber(keyframe.frame.timestampMs, 6)}ms`;
+  }
+  return `keyframe-${padNumber(keyframe.frame.timestampMs, 6)}ms`;
+}
+
+function eventCursorAt(events, startedAt, timestampMs) {
+  const absoluteTime = startedAt + timestampMs;
+  let index = 0;
+  while (index < events.length && events[index].timestampMs <= absoluteTime) {
+    index += 1;
+  }
+  return index;
 }
 
 async function goto(page, url) {
@@ -271,9 +426,16 @@ async function capture(page, options) {
   });
 }
 
+async function captureStableFrame({ page, options, shouldStop, waitWhilePaused }) {
+  await sleep(options.idleMs);
+  if (shouldStop()) return undefined;
+  if (await waitWhilePaused()) return null;
+  return capture(page, options);
+}
+
 async function saveState(input) {
   const id = padNumber(input.trace.states.length + 1);
-  const url = input.page.url();
+  const url = input.url || input.page.url();
   const route = routeFromUrl(url);
   const label = labelWithRoute(input.label, url);
   const imageName = `${id}-${slugify(label, "state")}.png`;
@@ -299,16 +461,16 @@ async function saveState(input) {
   }
 
   const console = input.consoleEvents
-    .slice(input.consoleCursor)
+    .slice(input.consoleCursor, input.consoleEndCursor)
     .map((event) => ({
       ...event,
-      timestampMs: event.timestampMs - input.startedAt
+      timestampMs: Math.max(0, event.timestampMs - input.startedAt)
     }));
   const network = input.networkEvents
-    .slice(input.networkCursor)
+    .slice(input.networkCursor, input.networkEndCursor)
     .map((event) => ({
       ...event,
-      timestampMs: event.timestampMs - input.startedAt
+      timestampMs: Math.max(0, event.timestampMs - input.startedAt)
     }));
   const issues = groupIssueEvents(issueEventsFromState({ console, network }));
 
@@ -316,12 +478,13 @@ async function saveState(input) {
     id,
     label,
     ...(route ? { route } : {}),
-    timestampMs: Date.now() - input.startedAt,
+    timestampMs: input.timestampMs ?? Date.now() - input.startedAt,
     url,
     title: await safeTitle(input.page),
     image: `frames/${imageName}`,
     diffFromPrevious,
     metrics,
+    ...(input.keyframe ? { keyframe: input.keyframe } : {}),
     console,
     network,
     issues

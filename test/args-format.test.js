@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { normalizeRawFrameOptions } from "../src/capture/rawFrames.js";
 import { parseArgs } from "../src/utils/args.js";
 import {
   padNumber,
@@ -79,5 +80,37 @@ test("parseRegion accepts x,y,width,height and rejects invalid input", () => {
   assert.throws(
     () => parseRegion("0,0,400"),
     /Invalid region/
+  );
+});
+
+test("raw frame options derive interval from fps", () => {
+  assert.deepEqual(normalizeRawFrameOptions({
+    enabled: false,
+    intervalMs: 200
+  }), {
+    enabled: false,
+    intervalMs: 200
+  });
+
+  assert.deepEqual(normalizeRawFrameOptions({
+    enabled: true,
+    intervalMs: 200
+  }), {
+    enabled: true,
+    intervalMs: 200
+  });
+
+  assert.deepEqual(normalizeRawFrameOptions({
+    fps: 30,
+    intervalMs: 200
+  }), {
+    enabled: true,
+    fps: 30,
+    intervalMs: 33
+  });
+
+  assert.throws(
+    () => normalizeRawFrameOptions({ fps: 0, intervalMs: 200 }),
+    /fps must be a positive number/
   );
 });

@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { listDesktopSources, listDesktopWindows, watchDesktop } from "./capture/desktopWatcher.js";
 import { capturePlaywrightFlow } from "./capture/playwrightFlow.js";
+import { normalizeRawFrameOptions } from "./capture/rawFrames.js";
 import { watchWeb } from "./capture/playwrightWatcher.js";
 import { createTerminalCaptureControl } from "./capture/terminalControls.js";
 import { normalizeMaskRegions } from "./diff/masks.js";
@@ -77,6 +78,12 @@ async function runWatch(parsed) {
 
   const viewport = parseViewport(parsed.flags.viewport || "1440x900");
   const masks = await maskOptions(parsed.flags);
+  const rawFrameOptions = normalizeRawFrameOptions({
+    enabled: parsed.flags["raw-frames"],
+    fps: parsed.flags.fps,
+    intervalMs: numberFlag(parsed.flags.interval, 200)
+  });
+  const idleMs = numberFlag(parsed.flags.idle, rawFrameOptions.enabled ? 0 : 350);
   const controls = shouldEnableWatchControls(parsed.flags)
     ? createTerminalCaptureControl()
     : undefined;
@@ -84,8 +91,8 @@ async function runWatch(parsed) {
     url,
     name: parsed.flags.name,
     outDir: parsed.flags.out || DEFAULT_TRACE_ROOT,
-    intervalMs: numberFlag(parsed.flags.interval, 200),
-    idleMs: numberFlag(parsed.flags.idle, 350),
+    intervalMs: rawFrameOptions.intervalMs,
+    idleMs,
     durationMs: numberFlag(parsed.flags.duration, 15000),
     minChangedRatio: numberFlag(parsed.flags["min-ratio"], 0.003),
     pixelThreshold: numberFlag(parsed.flags["pixel-threshold"], 0.12),
@@ -96,11 +103,16 @@ async function runWatch(parsed) {
     channel: parsed.flags.channel,
     verbose: Boolean(parsed.flags.verbose),
     masks,
+    rawFrames: rawFrameOptions.enabled,
+    rawFps: rawFrameOptions.fps,
     controls
   });
 
   console.log(`Trace written to ${result.traceDir}`);
   console.log(`Saved ${result.trace.states.length} state(s).`);
+  if (result.trace.rawFrames?.length) {
+    console.log(`Archived ${result.trace.rawFrames.length} raw frame(s).`);
+  }
   console.log(`Review it with: deltaframe review "${result.traceDir}"`);
 }
 
@@ -423,6 +435,8 @@ Watch options:
   --out <dir>                 Trace root directory. Default: .deltaframe/traces
   --duration <ms>             Capture duration. Use 0 until Ctrl+C. Default: 15000
   --interval <ms>             Screenshot sample interval. Default: 200
+  --fps <number>              Raw capture fps. Implies --raw-frames and sets --interval.
+  --raw-frames                Archive every sampled screenshot under raw/.
   --idle <ms>                 Wait after a change before saving. Default: 350
   --min-ratio <number>        Changed-pixel ratio needed to save. Default: 0.003
   --pixel-threshold <number>  Per-pixel diff threshold. Default: 0.12

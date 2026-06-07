@@ -9,6 +9,7 @@ trace-folder/
   summary.md
   frames/
   diffs/
+  raw/            (optional; dense sampled frames)
 ```
 
 ## `trace.json`
@@ -36,8 +37,24 @@ Example:
     "durationMs": 15000,
     "minChangedRatio": 0.003,
     "pixelThreshold": 0.12,
-    "maxFrames": 80
+    "maxFrames": 80,
+    "rawFrames": {
+      "enabled": true,
+      "directory": "raw",
+      "intervalMs": 33,
+      "fps": 30
+    }
   },
+  "rawFrames": [
+    {
+      "id": "raw-000001",
+      "timestampMs": 612,
+      "image": "raw/raw-000001-initial.png",
+      "reason": "initial",
+      "url": "http://localhost:3000/products/42?tab=details#pricing",
+      "route": "/products/42?tab=details#pricing"
+    }
+  ],
   "states": [
     {
       "id": "0001",
@@ -47,6 +64,11 @@ Example:
       "url": "http://localhost:3000/products/42?tab=details#pricing",
       "title": "Prototype",
       "image": "frames/0001-initial-products-42-tab-details-pricing.png",
+      "keyframe": {
+        "rawFrameId": "raw-000001",
+        "selectionReasons": ["first-frame"],
+        "skippedRawFrameCount": 0
+      },
       "console": [],
       "network": [],
       "issues": []
@@ -128,6 +150,39 @@ These IDs are what MCP tools use.
 ## Paths
 
 All image paths inside `trace.json` are relative to the trace folder and use forward slashes.
+
+## Raw Frames
+
+`rawFrames` is optional and appears when `watch` runs with `--raw-frames` or `--fps`. Raw frames are the dense sampled timeline. They are not curated states yet.
+
+State screenshots under `frames/` remain the selected sparse frames used by the current review UI and MCP state tools. Raw frames under `raw/` are the foundation for the next keyframe distillation layer.
+
+Raw frame reasons are simple capture-source labels such as `initial`, `sample`, `idle`, or `stable`. Future distillation metadata should add stronger keyframe reasons such as `loading-settled`, `route-change`, or `modal-opened`.
+
+## Selected Keyframes
+
+When raw capture is enabled, DeltaFrame runs a post-capture selector and writes selected keyframes into `states`. These are the images Codex should inspect first.
+
+Each selected state may include:
+
+```json
+{
+  "keyframe": {
+    "rawFrameId": "raw-000014",
+    "selectionReasons": ["visual-change", "last-frame"],
+    "skippedRawFrameCount": 5
+  }
+}
+```
+
+Initial reasons are deliberately explainable:
+
+- `first-frame`
+- `visual-change`
+- `route-change`
+- `last-frame`
+
+`skippedRawFrameCount` records how many duplicate or below-threshold raw frames were skipped since the previous selected keyframe.
 
 ## `curation.json`
 

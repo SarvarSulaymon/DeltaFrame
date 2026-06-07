@@ -7,6 +7,8 @@ description: Use when a user wants Codex to inspect DeltaFrame visual traces, co
 
 Use DeltaFrame when the user has captured a visual trace with `deltaframe watch` and wants help improving a prototype from the captured UI states.
 
+Core product understanding: DeltaFrame is meant to be a visual memory condenser for Codex. The ideal loop is dense capture, noise removal, keyframe selection, then Codex inspection. Do not treat raw pixel diffs as the product.
+
 ## Workflow
 
 1. Prefer the DeltaFrame MCP tools when the `deltaframe` MCP server is available.
