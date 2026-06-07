@@ -37,11 +37,11 @@ DeltaFrame should stay narrow: a helper for visual state memory during AI-assist
 
 ## 0.4 Desktop Capture
 
-- [ ] selected region capture
-- [ ] selected window capture
-- [ ] monitor capture
-- [ ] privacy redaction/masking
-- [ ] platform-specific permission docs
+- [x] selected region capture
+- [x] selected window capture
+- [x] monitor capture
+- [x] privacy redaction/masking
+- [x] platform-specific permission docs
 
 Candidate tools:
 

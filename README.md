@@ -117,6 +117,13 @@ node ./bin/deltaframe.js review .deltaframe/traces/<trace-folder>
 
 In the review UI, use Keep/Ignore and per-state notes to curate noisy states. DeltaFrame saves those choices as `curation.json`, and Export Kept creates a new complete trace folder containing only kept states plus their notes.
 
+Capture a desktop region or monitor when the optional Python `mss` backend is installed:
+
+```bash
+python -m pip install mss
+node ./bin/deltaframe.js desktop --region 0,0,1200,800 --redact '[{"x":0,"y":0,"width":320,"height":120}]'
+```
+
 Or summarize the newest trace:
 
 ```bash
@@ -148,11 +155,12 @@ node ./bin/deltaframe.js compare .deltaframe/traces/before .deltaframe/traces/af
 
 ```bash
 deltaframe watch --url <url> [options]
+deltaframe desktop [--region x,y,width,height | --monitor n | --window-title text]
 deltaframe review [trace-dir]
 deltaframe summarize [trace-dir]
 deltaframe compare <before-trace-dir> <after-trace-dir>
 deltaframe mcp [--trace-root .deltaframe/traces]
-deltaframe doctor [--browser]
+deltaframe doctor [--browser] [--desktop]
 ```
 
 Common watch options:
@@ -173,6 +181,7 @@ Common watch options:
 Use `--mask` or `--mask-file` for clocks, cursors, animated banners, and other dynamic regions that should be ignored during image diffing. Masks are saved in trace settings, but frame PNGs stay unmasked.
 
 See [docs/CLI.md](docs/CLI.md) for full command details.
+See [docs/DESKTOP_CAPTURE.md](docs/DESKTOP_CAPTURE.md) for screen/window capture setup and permissions.
 
 ## MCP Setup
 

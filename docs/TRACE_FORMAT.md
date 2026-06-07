@@ -166,6 +166,31 @@ The comparison is metadata-first and deterministic. Use state images, diffs, or 
 
 Web captures store a human-readable `route` for each state when the page URL can be parsed. The route is the URL pathname plus search and hash, for example `/products/42?tab=details#pricing`. State labels include this route context, and frame filenames are still made safe through DeltaFrame's normal slugification.
 
+## Desktop Sources
+
+Desktop captures use the same trace folder shape as web captures, with `source.type` set to `desktop`.
+
+Example source metadata:
+
+```json
+{
+  "type": "desktop",
+  "url": "desktop://monitor/1",
+  "mode": "monitor",
+  "backend": "mss",
+  "platform": "Windows",
+  "monitorIndex": 1,
+  "region": {
+    "x": 0,
+    "y": 0,
+    "width": 1920,
+    "height": 1080
+  }
+}
+```
+
+State records may also include `region` and `window` metadata for the exact captured area.
+
 ## Metrics
 
 `metrics.ratio` is:
@@ -185,6 +210,10 @@ For UI work, tiny ratios can still matter. A validation message or button shift 
 ```
 
 Masks are applied only to image diffing and changed-pixel metrics. Frame PNGs remain unmasked so the trace still shows the real UI. `metrics.totalPixels` excludes masked pixels, counting overlapping mask regions only once.
+
+## Redactions
+
+`settings.redactions` is optional and uses the same rectangle shape as masks. Redactions are different from masks: they are applied to screenshot PNGs before diffing and before writing files to disk. Use them for private screen areas that must not appear in `frames/`, `diffs/`, resources, or review UI output.
 
 ## Console Events
 

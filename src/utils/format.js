@@ -47,6 +47,23 @@ export function parseViewport(value) {
   };
 }
 
+export function parseRegion(value) {
+  const match = String(value).match(/^(-?\d+),(-?\d+),(\d+),(\d+)$/);
+  if (!match) {
+    throw new Error(`Invalid region "${value}". Use x,y,width,height, for example 0,0,800,600.`);
+  }
+  const region = {
+    x: Number(match[1]),
+    y: Number(match[2]),
+    width: Number(match[3]),
+    height: Number(match[4])
+  };
+  if (region.width < 1 || region.height < 1) {
+    throw new Error(`Invalid region "${value}". Width and height must be positive.`);
+  }
+  return region;
+}
+
 export function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }

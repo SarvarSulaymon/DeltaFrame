@@ -70,6 +70,68 @@ Mask rectangles use screenshot pixel coordinates:
 
 Masks affect diffing only. DeltaFrame still saves the original unmasked screenshots so humans and agents can inspect the real UI, while `trace.json` records the applied masks under `settings.masks`.
 
+## `desktop`
+
+Capture meaningful visual changes from a local screen, monitor, selected region, or visible window. Desktop capture uses an optional Python `mss` backend, so install it in the Python environment DeltaFrame will call:
+
+```bash
+python -m pip install mss
+```
+
+List monitor indexes:
+
+```bash
+deltaframe desktop --list
+```
+
+Capture a selected region:
+
+```bash
+deltaframe desktop --region 0,0,1200,800 --name desktop-region
+```
+
+Capture a monitor:
+
+```bash
+deltaframe desktop --monitor 1 --name monitor-one
+```
+
+Capture a visible window by title substring on native Windows:
+
+```bash
+deltaframe desktop --window-title "Prototype" --name prototype-window
+```
+
+Desktop options:
+
+| Option | Default | Description |
+| --- | ---: | --- |
+| `--list` | `false` | List monitor sources visible to the Python `mss` backend. |
+| `--list-windows` | `false` | List visible windows when supported. |
+| `--region` | none | Absolute screen region as `x,y,width,height`. |
+| `--monitor` | first real monitor | MSS monitor index. Index `0` is the virtual desktop. |
+| `--window-title` | none | Visible window title substring. Currently supported on native Windows. |
+| `--python` | auto | Python executable for the backend. Useful from WSL when using host Python. |
+| `--out` | `.deltaframe/traces` | Root directory for captured traces. |
+| `--duration` | `10000` | Capture duration in milliseconds. |
+| `--interval` | `500` | Screenshot sample interval in milliseconds. |
+| `--idle` | `350` | Time to wait after detecting a change before saving a stable frame. |
+| `--min-ratio` | `0.003` | Minimum changed-pixel ratio required to save a new state. |
+| `--pixel-threshold` | `0.12` | Per-pixel sensitivity passed to pixelmatch. |
+| `--mask` | none | Region(s) ignored during diffing only. Saved screenshots remain unchanged. |
+| `--mask-file` | none | Read diff mask region(s) from a JSON file. |
+| `--redact` | none | Region(s) blacked out in saved screenshots before diffing and writing. |
+| `--redact-file` | none | Read redaction region(s) from a JSON file. |
+| `--max-frames` | `80` | Stop after saving this many states. |
+
+Use `--redact` for private screen areas that should not be written to disk:
+
+```bash
+deltaframe desktop --monitor 1 --redact '[{"x":0,"y":0,"width":320,"height":120,"label":"account"}]'
+```
+
+See [DESKTOP_CAPTURE.md](DESKTOP_CAPTURE.md) for platform permissions and support notes.
+
 ## `review`
 
 Open a local review UI for a trace.
@@ -138,6 +200,7 @@ Check local runtime dependencies.
 ```bash
 deltaframe doctor
 deltaframe doctor --browser
+deltaframe doctor --desktop
 ```
 
 It checks for:
@@ -151,3 +214,5 @@ With `--browser`, it also tries to launch Chromium. On WSL/Ubuntu, a failed brow
 ```bash
 sudo npx playwright install-deps chromium
 ```
+
+With `--desktop`, it checks the optional Python `mss` backend and lists how many monitor sources are visible.

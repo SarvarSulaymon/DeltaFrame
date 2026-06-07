@@ -5,10 +5,10 @@ DeltaFrame is a local-first tool. It should not upload screenshots by itself or 
 ## System Shape
 
 ```text
-Prototype / local URL
+Prototype / local URL or desktop source
         |
         v
-Playwright capture loop
+Playwright capture loop or optional MSS desktop backend
         |
         v
 PNG frame buffer
@@ -37,7 +37,11 @@ The CLI dispatches to capture, review, summary, doctor, and MCP commands. It use
 
 ### Capture Engine
 
-File: `src/capture/playwrightWatcher.js`
+Files:
+
+- `src/capture/playwrightWatcher.js`
+- `src/capture/desktopWatcher.js`
+- `src/capture/mss_backend.py`
 
 The capture engine opens a Chromium page with Playwright and samples screenshots at a fixed interval. It saves the initial state, then compares each candidate screenshot against the last saved state.
 
@@ -52,6 +56,10 @@ The current state-selection algorithm:
 7. save if it still exceeds `--min-ratio`
 
 This prevents saving every animation tick while still catching useful UI state transitions.
+
+Desktop capture follows the same state-selection loop, but the frame source is an optional Python `mss` backend. It supports monitor, absolute region, and native Windows window-title capture. Desktop traces use `source.type: "desktop"` and still write `trace.json`, `summary.md`, `frames/`, and `diffs/`.
+
+Saved-frame redactions are applied before diffing and writing PNGs. Diff masks still only affect changed-pixel calculation.
 
 ### Diff Engine
 
@@ -109,12 +117,15 @@ Local web prototypes give us a cleaner first version:
 - screenshots without OS-level capture permission
 - better fit for frontend work with Codex
 
-## Later Modes
+## Capture Modes
+
+DeltaFrame currently supports:
+
+- `web` mode with Playwright
+- `desktop` mode for selected monitor/region/window through the optional MSS backend
 
 DeltaFrame should eventually support:
 
-- `web` mode with Playwright
-- `screen` mode for selected monitor/region/window
 - `video-import` mode using FFmpeg scene detection
 - `test` mode that captures states from scripted Playwright flows
 

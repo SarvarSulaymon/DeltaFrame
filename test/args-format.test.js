@@ -4,6 +4,7 @@ import { parseArgs } from "../src/utils/args.js";
 import {
   padNumber,
   labelWithRoute,
+  parseRegion,
   parseViewport,
   routeFromUrl,
   slugify,
@@ -61,5 +62,22 @@ test("parseViewport accepts WIDTHxHEIGHT and rejects invalid input", () => {
   assert.throws(
     () => parseViewport("wide"),
     /Invalid viewport "wide"/
+  );
+});
+
+test("parseRegion accepts x,y,width,height and rejects invalid input", () => {
+  assert.deepEqual(parseRegion("-10,20,300,400"), {
+    x: -10,
+    y: 20,
+    width: 300,
+    height: 400
+  });
+  assert.throws(
+    () => parseRegion("0,0,0,400"),
+    /Width and height must be positive/
+  );
+  assert.throws(
+    () => parseRegion("0,0,400"),
+    /Invalid region/
   );
 });

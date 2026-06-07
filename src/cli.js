@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { listDesktopSources, listDesktopWindows, watchDesktop } from "./capture/desktopWatcher.js";
 import { watchWeb } from "./capture/playwrightWatcher.js";
 import { createTerminalCaptureControl } from "./capture/terminalControls.js";
 import { normalizeMaskRegions } from "./diff/masks.js";
@@ -8,7 +9,7 @@ import { startReviewServer } from "./review/server.js";
 import { compareTraces, findLatestTraceDir, readTrace } from "./trace/store.js";
 import { parseArgs } from "./utils/args.js";
 import { loadPackage, packageAvailable } from "./utils/deps.js";
-import { parseViewport } from "./utils/format.js";
+import { parseRegion, parseViewport } from "./utils/format.js";
 
 const DEFAULT_TRACE_ROOT = ".deltaframe/traces";
 
@@ -28,6 +29,11 @@ export async function main(argv) {
 
   if (command === "review") {
     await runReview(parsed);
+    return;
+  }
+
+  if (command === "desktop") {
+    await runDesktop(parsed);
     return;
   }
 
@@ -107,6 +113,53 @@ async function runReview(parsed) {
   });
 }
 
+async function runDesktop(parsed) {
+  const python = stringOption(parsed.flags.python);
+
+  if (parsed.flags.list) {
+    console.log(JSON.stringify(await listDesktopSources({ python }), null, 2));
+    return;
+  }
+
+  if (parsed.flags["list-windows"]) {
+    console.log(JSON.stringify(await listDesktopWindows({
+      python,
+      windowTitle: stringOption(parsed.flags["window-title"] || parsed.flags.title)
+    }), null, 2));
+    return;
+  }
+
+  const targetCount = [
+    parsed.flags.region !== undefined,
+    parsed.flags.monitor !== undefined,
+    parsed.flags["window-title"] !== undefined || parsed.flags.title !== undefined
+  ].filter(Boolean).length;
+  if (targetCount > 1) {
+    throw new Error("Choose only one desktop target: --region, --monitor, or --window-title.");
+  }
+
+  const result = await watchDesktop({
+    name: parsed.flags.name,
+    outDir: parsed.flags.out || DEFAULT_TRACE_ROOT,
+    durationMs: numberFlag(parsed.flags.duration, 10000),
+    intervalMs: numberFlag(parsed.flags.interval, 500),
+    idleMs: numberFlag(parsed.flags.idle, 350),
+    minChangedRatio: numberFlag(parsed.flags["min-ratio"], 0.003),
+    pixelThreshold: numberFlag(parsed.flags["pixel-threshold"], 0.12),
+    maxFrames: numberFlag(parsed.flags["max-frames"], 80),
+    region: parsed.flags.region ? parseRegion(parsed.flags.region) : undefined,
+    monitorIndex: optionalIntegerFlag(parsed.flags.monitor, "monitor"),
+    windowTitle: stringOption(parsed.flags["window-title"] || parsed.flags.title),
+    masks: await maskOptions(parsed.flags),
+    redactions: await redactionOptions(parsed.flags),
+    python
+  });
+
+  console.log(`Trace written to ${result.traceDir}`);
+  console.log(`Saved ${result.trace.states.length} state(s).`);
+  console.log(`Review it with: deltaframe review "${result.traceDir}"`);
+}
+
 async function runSummarize(parsed) {
   const traceDir = parsed.positionals[0] || await findLatestTraceDir(DEFAULT_TRACE_ROOT);
   if (!traceDir) {
@@ -172,6 +225,13 @@ async function runDoctor(flags = {}) {
       process.exitCode = 1;
     }
   }
+
+  if (flags.desktop) {
+    const desktopOk = await checkDesktopBackend(flags.python);
+    if (!desktopOk) {
+      process.exitCode = 1;
+    }
+  }
 }
 
 async function checkBrowserLaunch(channel) {
@@ -194,6 +254,20 @@ async function checkBrowserLaunch(channel) {
   }
 }
 
+async function checkDesktopBackend(python) {
+  try {
+    const sources = await listDesktopSources({ python: stringOption(python) });
+    console.log(`ok  desktop capture backend - ${sources.monitors.length} monitor source(s)`);
+    return true;
+  } catch (error) {
+    console.log(`no  desktop capture backend - ${firstLine(error.message)}`);
+    console.log("    Try: python -m pip install mss");
+    console.log("    On macOS, grant Screen Recording permission to the Python executable.");
+    console.log("    From WSL, use a native host Python via --python if Linux capture cannot see the Windows desktop.");
+    return false;
+  }
+}
+
 function firstLine(value) {
   return String(value || "").split(/\r?\n/)[0];
 }
@@ -205,6 +279,20 @@ function numberFlag(value, fallback) {
     throw new Error(`Expected a number, got ${value}`);
   }
   return parsed;
+}
+
+function optionalIntegerFlag(value, name) {
+  if (value === undefined || value === null || value === "") return undefined;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error(`${name} must be a non-negative integer, got ${value}`);
+  }
+  return parsed;
+}
+
+function stringOption(value) {
+  if (value === undefined || value === null || value === "") return undefined;
+  return String(value);
 }
 
 async function maskOptions(flags) {
@@ -226,6 +314,25 @@ async function maskOptions(flags) {
   return masks;
 }
 
+async function redactionOptions(flags) {
+  const redactions = [];
+
+  if (flags.redact !== undefined || flags.redactions !== undefined) {
+    redactions.push(...normalizeMaskRegions(flags.redact ?? flags.redactions, "--redact"));
+  }
+
+  if (flags["redact-file"] !== undefined) {
+    if (flags["redact-file"] === true || flags["redact-file"] === "") {
+      throw new Error("--redact-file requires a path to a JSON file.");
+    }
+    const redactFile = String(flags["redact-file"]);
+    const text = await fs.readFile(redactFile, "utf8");
+    redactions.push(...normalizeMaskRegions(text, "--redact-file"));
+  }
+
+  return redactions;
+}
+
 function printHelp() {
   console.log(`DeltaFrame 0.1.0
 
@@ -233,11 +340,12 @@ Capture meaningful visual state changes from local prototypes.
 
 Usage:
   deltaframe watch --url <url> [options]
+  deltaframe desktop [--region x,y,width,height | --monitor n | --window-title text] [options]
   deltaframe review [trace-dir] [--port 7799]
   deltaframe summarize [trace-dir]
   deltaframe compare <before-trace-dir> <after-trace-dir> [--focus text] [--expectation text]
   deltaframe mcp [--trace-root .deltaframe/traces]
-  deltaframe doctor [--browser] [--channel chrome]
+  deltaframe doctor [--browser] [--desktop] [--channel chrome]
 
 Watch options:
   --url <url>                 Local web prototype URL or file URL.
@@ -258,9 +366,21 @@ Watch options:
   --headed                    Show the browser so you can interact manually.
   --no-controls               Disable interactive p/q terminal controls.
 
+Desktop options:
+  --list                      List monitors visible to the optional MSS backend.
+  --list-windows              List visible windows when supported.
+  --region <x,y,w,h>          Capture an absolute screen region.
+  --monitor <n>               Capture one MSS monitor index. Defaults to the first real monitor.
+  --window-title <text>       Capture a visible window by title substring. Native Windows only.
+  --python <path>             Python executable for the MSS backend.
+  --redact <json>             Redact saved screenshot region(s), for example '[{"x":0,"y":0,"width":300,"height":80}]'.
+  --redact-file <path>        Read redaction region(s) from a JSON file.
+
 Examples:
   deltaframe watch --url http://localhost:3000 --name landing-flow --headed
   deltaframe watch --url http://localhost:3000 --mask '[{"x":0,"y":0,"width":160,"height":40,"label":"clock"}]'
+  deltaframe desktop --region 0,0,1200,800 --name desktop-flow
+  deltaframe desktop --monitor 1 --redact '[{"x":0,"y":0,"width":320,"height":120,"label":"account"}]'
   deltaframe review .deltaframe/traces/2026-06-06-landing-flow
   deltaframe compare .deltaframe/traces/before .deltaframe/traces/after --focus header
   deltaframe mcp --trace-root .deltaframe/traces
