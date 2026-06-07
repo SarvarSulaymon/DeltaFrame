@@ -7,12 +7,12 @@ description: Use when a user wants Codex to inspect DeltaFrame visual traces, co
 
 Use DeltaFrame when the user has captured a visual trace with `deltaframe watch` and wants help improving a prototype from the captured UI states.
 
-Core product understanding: DeltaFrame is meant to be a visual memory condenser for Codex. The ideal loop is dense capture, noise removal, keyframe selection, then Codex inspection. Do not treat raw pixel diffs as the product.
+Core product understanding: DeltaFrame is meant to be a visual memory condenser for Codex. The default loop is dense capture, noise removal, keyframe selection, then Codex inspection. Do not treat raw pixel diffs as the product.
 
 ## Workflow
 
 1. Prefer the DeltaFrame MCP tools when the `deltaframe` MCP server is available.
-2. If the user gives a URL to inspect, use `deltaframe_capture_url` with a short positive `durationMs`.
+2. If the user gives a URL to inspect, use `deltaframe_capture_url` with a short positive `durationMs`; raw capture and keyframe distillation are the default.
 3. If the trace directory is not obvious, use `deltaframe_latest_trace`.
 4. Start review with `deltaframe_summarize_trace` or `deltaframe_list_states`.
 5. If you need MCP resource-oriented access, read:
@@ -57,6 +57,7 @@ The trace folder contains:
 trace.json
 summary.md
 frames/
+raw/
 diffs/
 ```
 

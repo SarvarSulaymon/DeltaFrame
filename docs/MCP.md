@@ -79,7 +79,7 @@ Trace summaries, state indexes, and per-state JSON include human annotations fro
 
 Captures meaningful visual state changes from a URL and writes a new trace.
 
-Current implementation captures sparse changed states. The next intended behavior is dense raw capture followed by keyframe distillation.
+Default implementation captures a dense raw timeline, then exposes selected keyframes. Set `rawFrames` to `false` only when you intentionally want sparse changed-state capture.
 
 Input:
 
@@ -87,11 +87,11 @@ Input:
 {
   "url": "http://localhost:3000",
   "name": "landing-flow",
-  "durationMs": 15000,
-  "intervalMs": 200,
-  "fps": 30,
+  "durationMs": 10000,
+  "intervalMs": 100,
+  "fps": 10,
   "rawFrames": true,
-  "idleMs": 350,
+  "idleMs": 0,
   "minChangedRatio": 0.003,
   "pixelThreshold": 0.12,
   "masks": [
@@ -110,9 +110,9 @@ Only `url` is required. The MCP capture call must use a positive `durationMs`; u
 
 `masks` may be an array of `{ "x", "y", "width", "height", "label" }` rectangles or a JSON string containing that array. Masks are applied only while diffing; saved screenshots remain unmasked. Captures record normalized masks in `trace.json` under `settings.masks`.
 
-Use `rawFrames: true` or `fps` when Codex needs a dense visual timeline instead of only sparse changed states. Raw frames are written under `raw/` and listed in `trace.rawFrames`; selected state images still live under `frames/`.
+By default, raw frames are written under `raw/` and listed in `trace.rawFrames`; selected state images still live under `frames/`.
 
-When raw capture is enabled, `deltaframe_list_states`, state resources, and image resources expose the selected keyframes, not every raw frame. Each selected state includes `keyframe.rawFrameId` and `keyframe.selectionReasons` when available.
+`deltaframe_list_states`, state resources, and image resources expose the selected keyframes, not every raw frame. Each selected state includes `keyframe.rawFrameId`, `keyframe.selectionReasons`, and `keyframe.skippedRawFrameCount` when available.
 
 Returns JSON text with:
 

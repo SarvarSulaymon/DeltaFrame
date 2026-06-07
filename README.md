@@ -27,15 +27,16 @@ Version `0.1.0` focuses on local web prototypes.
 ```text
 local URL
   -> Playwright screenshot sampler
-  -> pixel diff + duplicate filter
-  -> trace.json + PNG frames + PNG diffs
+  -> dense raw frames
+  -> keyframe distillation + noise filtering
+  -> trace.json + selected PNG frames + debug PNG diffs
   -> local review UI
   -> MCP tools for Codex
 ```
 
-Desktop/window capture is intentionally later. The first useful version should be small, stable, and easy to reason about.
+Desktop/window capture uses the same trace shape through an optional Python `mss` backend.
 
-The current implementation saves sparse changed states while capturing. That is useful for early testing, but it is not the final desired behavior. The next product correction is to record raw frames at a configurable frame rate, then select meaningful keyframes after capture.
+The core behavior is now raw capture first, then selected keyframes. Sparse live changed-state capture still exists behind `--sparse` for comparison and CI-style use.
 
 ## Install From Source Today
 
@@ -109,7 +110,7 @@ If you already ran `npm link` or installed the future npm package globally, use:
 deltaframe watch --url http://localhost:3000 --name landing-flow --headed
 ```
 
-Interact with the opened browser. DeltaFrame samples the page, waits for visual changes to settle, and saves only changed states. Use `--raw-frames` or `--fps 30` to also archive the sampled raw timeline under `raw/` for later keyframe distillation.
+Interact with the opened browser. By default, DeltaFrame records 10 seconds at 10 fps, archives the raw timeline under `raw/`, then writes selected Codex-facing keyframes under `frames/`. Use `--fps 30` for a denser run or `--sparse` for the older live changed-state sampler.
 
 In an interactive terminal, press `p` to pause or resume capture without closing the browser, `q` to stop and write the trace, or Ctrl+C to stop. Use `--no-controls` for CI and other non-interactive runs.
 
@@ -147,16 +148,16 @@ node ./bin/deltaframe.js compare .deltaframe/traces/before .deltaframe/traces/af
   trace.json
   summary.md
   frames/
-    0001-initial.png
-    0002-changed-001284ms.png
+    0001-first-frame.png
+    0002-keyframe-001284ms.png
   diffs/
     0001-0002.png
-  raw/                 # optional when --raw-frames or --fps is used
+  raw/
     raw-000001-initial.png
     raw-000002-sample.png
 ```
 
-`trace.json` is the source of truth. It records state IDs, timestamps, URLs, screenshot paths, diff paths, changed-pixel metrics, viewport settings, and console warnings/errors observed since the previous state.
+`trace.json` is the source of truth. It records raw-frame paths, selected keyframe IDs, timestamps, URLs, screenshot paths, debug diff paths, changed-pixel metrics, viewport settings, and console warnings/errors observed since the previous selected keyframe.
 
 ## Commands
 

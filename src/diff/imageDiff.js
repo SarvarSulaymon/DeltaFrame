@@ -35,6 +35,9 @@ export async function diffPngBuffers(beforeBuffer, afterBuffer, options = {}) {
       diffColorAlt: [0, 160, 255]
     }
   );
+  const changedBounds = changedPixels > 0
+    ? boundsFromPixelmatchDiff(diff.data, width, height)
+    : null;
 
   const totalPixels = Math.max(0, width * height - maskedPixelCount(masks, width, height));
 
@@ -42,11 +45,48 @@ export async function diffPngBuffers(beforeBuffer, afterBuffer, options = {}) {
     changedPixels,
     totalPixels,
     ratio: totalPixels === 0 ? 0 : changedPixels / totalPixels,
+    changedBounds,
     width,
     height,
     dimensionsChanged: before.width !== after.width || before.height !== after.height,
     diffBuffer: PNG.sync.write(diff)
   };
+}
+
+function boundsFromPixelmatchDiff(data, width, height) {
+  let left = width;
+  let top = height;
+  let right = -1;
+  let bottom = -1;
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = (y * width + x) << 2;
+      if (!isDiffPixel(data, index)) continue;
+      left = Math.min(left, x);
+      top = Math.min(top, y);
+      right = Math.max(right, x);
+      bottom = Math.max(bottom, y);
+    }
+  }
+
+  if (right < left || bottom < top) {
+    return null;
+  }
+
+  return {
+    x: left,
+    y: top,
+    width: right - left + 1,
+    height: bottom - top + 1
+  };
+}
+
+function isDiffPixel(data, index) {
+  const r = data[index];
+  const g = data[index + 1];
+  const b = data[index + 2];
+  return (r === 255 && g === 0 && b === 96) || (r === 0 && g === 160 && b === 255);
 }
 
 function normalizePng(PNG, source, width, height) {

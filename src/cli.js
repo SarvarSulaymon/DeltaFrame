@@ -15,6 +15,9 @@ import { loadPackage, packageAvailable } from "./utils/deps.js";
 import { parseRegion, parseViewport } from "./utils/format.js";
 
 const DEFAULT_TRACE_ROOT = ".deltaframe/traces";
+const DEFAULT_WEB_RAW_FPS = 10;
+const DEFAULT_DESKTOP_RAW_FPS = 5;
+const DEFAULT_WATCH_DURATION_MS = 10000;
 
 export async function main(argv) {
   const parsed = parseArgs(argv);
@@ -78,10 +81,14 @@ async function runWatch(parsed) {
 
   const viewport = parseViewport(parsed.flags.viewport || "1440x900");
   const masks = await maskOptions(parsed.flags);
+  if (parsed.flags.sparse && (parsed.flags["raw-frames"] || parsed.flags.fps !== undefined)) {
+    throw new Error("Use either --sparse or raw capture flags, not both.");
+  }
+  const useRawFrames = !parsed.flags.sparse;
   const rawFrameOptions = normalizeRawFrameOptions({
-    enabled: parsed.flags["raw-frames"],
-    fps: parsed.flags.fps,
-    intervalMs: numberFlag(parsed.flags.interval, 200)
+    enabled: useRawFrames || parsed.flags["raw-frames"],
+    fps: parsed.flags.fps ?? (useRawFrames && parsed.flags.interval === undefined ? DEFAULT_WEB_RAW_FPS : undefined),
+    intervalMs: numberFlag(parsed.flags.interval, useRawFrames ? Math.round(1000 / DEFAULT_WEB_RAW_FPS) : 200)
   });
   const idleMs = numberFlag(parsed.flags.idle, rawFrameOptions.enabled ? 0 : 350);
   const controls = shouldEnableWatchControls(parsed.flags)
@@ -93,7 +100,7 @@ async function runWatch(parsed) {
     outDir: parsed.flags.out || DEFAULT_TRACE_ROOT,
     intervalMs: rawFrameOptions.intervalMs,
     idleMs,
-    durationMs: numberFlag(parsed.flags.duration, 15000),
+    durationMs: numberFlag(parsed.flags.duration, DEFAULT_WATCH_DURATION_MS),
     minChangedRatio: numberFlag(parsed.flags["min-ratio"], 0.003),
     pixelThreshold: numberFlag(parsed.flags["pixel-threshold"], 0.12),
     maxFrames: numberFlag(parsed.flags["max-frames"], 80),
@@ -161,8 +168,7 @@ async function runDesktop(parsed) {
     name: parsed.flags.name,
     outDir: parsed.flags.out || DEFAULT_TRACE_ROOT,
     durationMs: numberFlag(parsed.flags.duration, 10000),
-    intervalMs: numberFlag(parsed.flags.interval, 500),
-    idleMs: numberFlag(parsed.flags.idle, 350),
+    ...desktopTimingOptions(parsed.flags),
     minChangedRatio: numberFlag(parsed.flags["min-ratio"], 0.003),
     pixelThreshold: numberFlag(parsed.flags["pixel-threshold"], 0.12),
     maxFrames: numberFlag(parsed.flags["max-frames"], 80),
@@ -176,7 +182,29 @@ async function runDesktop(parsed) {
 
   console.log(`Trace written to ${result.traceDir}`);
   console.log(`Saved ${result.trace.states.length} state(s).`);
+  if (result.trace.rawFrames?.length) {
+    console.log(`Archived ${result.trace.rawFrames.length} raw frame(s).`);
+  }
   console.log(`Review it with: deltaframe review "${result.traceDir}"`);
+}
+
+function desktopTimingOptions(flags) {
+  if (flags.sparse && (flags["raw-frames"] || flags.fps !== undefined)) {
+    throw new Error("Use either --sparse or raw capture flags, not both.");
+  }
+  const useRawFrames = !flags.sparse;
+  const rawFrameOptions = normalizeRawFrameOptions({
+    enabled: useRawFrames || flags["raw-frames"],
+    fps: flags.fps ?? (useRawFrames && flags.interval === undefined ? DEFAULT_DESKTOP_RAW_FPS : undefined),
+    intervalMs: numberFlag(flags.interval, useRawFrames ? Math.round(1000 / DEFAULT_DESKTOP_RAW_FPS) : 500)
+  });
+  return {
+    intervalMs: rawFrameOptions.intervalMs,
+    idleMs: numberFlag(flags.idle, rawFrameOptions.enabled ? 0 : 350),
+    rawFrames: rawFrameOptions.enabled,
+    rawFps: rawFrameOptions.fps,
+    cursorFilter: flags["include-cursor-motion"] ? false : true
+  };
 }
 
 async function runFlow(parsed) {
@@ -433,11 +461,12 @@ Watch options:
   --url <url>                 Local web prototype URL or file URL.
   --name <name>               Human name for the trace.
   --out <dir>                 Trace root directory. Default: .deltaframe/traces
-  --duration <ms>             Capture duration. Use 0 until Ctrl+C. Default: 15000
-  --interval <ms>             Screenshot sample interval. Default: 200
-  --fps <number>              Raw capture fps. Implies --raw-frames and sets --interval.
-  --raw-frames                Archive every sampled screenshot under raw/.
-  --idle <ms>                 Wait after a change before saving. Default: 350
+  --duration <ms>             Capture duration. Use 0 until Ctrl+C. Default: 10000
+  --interval <ms>             Screenshot sample interval. Default: 100 in raw mode
+  --fps <number>              Raw capture fps. Default: 10
+  --raw-frames                Archive every sampled screenshot under raw/. Default mode
+  --sparse                    Use the older live changed-state sampler.
+  --idle <ms>                 Wait after a change before saving. Default: 0, or 350 with --sparse
   --min-ratio <number>        Changed-pixel ratio needed to save. Default: 0.003
   --pixel-threshold <number>  Per-pixel diff threshold. Default: 0.12
   --mask <json>               Mask region(s) ignored by diffing, for example '[{"x":0,"y":0,"width":120,"height":32}]'.
@@ -457,6 +486,10 @@ Desktop options:
   --monitor <n>               Capture one MSS monitor index. Defaults to the first real monitor.
   --window-title <text>       Capture a visible window by title substring. Native Windows only.
   --python <path>             Python executable for the MSS backend.
+  --fps <number>              Raw desktop capture fps. Default: 5
+  --raw-frames                Archive every sampled screenshot under raw/. Default mode
+  --sparse                    Use the older live changed-state sampler.
+  --include-cursor-motion     Keep small cursor-like desktop changes as keyframe candidates.
   --redact <json>             Redact saved screenshot region(s), for example '[{"x":0,"y":0,"width":300,"height":80}]'.
   --redact-file <path>        Read redaction region(s) from a JSON file.
 

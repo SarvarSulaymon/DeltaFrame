@@ -40,8 +40,10 @@ deltaframe desktop --monitor 1 --name monitor-flow
 Selected window by title substring, native Windows only:
 
 ```bash
-deltaframe desktop --window-title "Prototype" --name prototype-window
+deltaframe desktop --window-title "Prototype" --name prototype-window --fps 10
 ```
+
+Desktop capture defaults to raw-frame distillation at 5 fps for 10 seconds. Small cursor-like changes are ignored by default so moving the pointer does not dominate selected keyframes. Use `--include-cursor-motion` when cursor position itself is important, or `--sparse` for the older live changed-state sampler.
 
 ## Privacy
 
@@ -87,7 +89,8 @@ Desktop traces use the same folder structure as web traces:
 trace.json
 summary.md
 frames/
+raw/
 diffs/
 ```
 
-The trace records `source.type: "desktop"`, the capture mode, backend, platform, monitor/window/region metadata, and any `settings.redactions` that were applied.
+The trace records `source.type: "desktop"`, the capture mode, backend, platform, monitor/window/region metadata, raw-frame settings, keyframe reasons, cursor/noise filter settings, and any `settings.redactions` that were applied.

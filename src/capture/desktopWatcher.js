@@ -6,6 +6,7 @@ import { normalizeMaskRegions } from "../diff/masks.js";
 import { diffPngBuffers } from "../diff/imageDiff.js";
 import { createTraceDir, writeSummary, writeTrace } from "../trace/store.js";
 import { padNumber, sleep, slugify } from "../utils/format.js";
+import { createRawFrameRecorder, selectRawKeyframes } from "./rawFrames.js";
 import { applyRedactionsToPngBuffer } from "./redaction.js";
 
 const BACKEND_SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), "mss_backend.py");
@@ -88,6 +89,18 @@ export async function watchDesktop(options = {}) {
     states: []
   };
 
+  if (options.rawFrames) {
+    return captureDesktopRawTimeline({
+      trace,
+      traceDir,
+      options,
+      firstFrame,
+      startedAt,
+      masks,
+      redactions
+    });
+  }
+
   let lastSaved = await saveDesktopState({
     trace,
     traceDir,
@@ -138,6 +151,91 @@ export async function watchDesktop(options = {}) {
   return { traceDir, trace };
 }
 
+async function captureDesktopRawTimeline({
+  trace,
+  traceDir,
+  options,
+  firstFrame,
+  startedAt,
+  masks,
+  redactions
+}) {
+  const rawRecorder = await createRawFrameRecorder({
+    traceDir,
+    trace,
+    startedAt,
+    options: {
+      intervalMs: options.intervalMs,
+      fps: options.rawFps
+    }
+  });
+
+  await rawRecorder.record({
+    buffer: firstFrame.buffer,
+    reason: "initial",
+    url: trace.source.url,
+    metadata: firstFrame.metadata
+  });
+
+  const maxRawFrames = options.maxRawFrames ?? Number.POSITIVE_INFINITY;
+  while (Date.now() - startedAt < options.durationMs && trace.rawFrames.length < maxRawFrames) {
+    await sleep(options.intervalMs);
+    const sample = await captureDesktopFrame({ ...options, redactions });
+    await rawRecorder.record({
+      buffer: sample.buffer,
+      reason: "sample",
+      url: trace.source.url,
+      metadata: sample.metadata
+    });
+  }
+
+  const keyframes = await selectRawKeyframes({
+    traceDir,
+    rawFrames: trace.rawFrames,
+    maxKeyframes: options.maxFrames,
+    minChangedRatio: options.minChangedRatio,
+    pixelThreshold: options.pixelThreshold,
+    masks,
+    cursorFilter: options.cursorFilter !== false,
+    stableFrameLookahead: options.stableFrameLookahead ?? 1
+  });
+  trace.settings.keyframes = {
+    strategy: "raw-diff-threshold-v1",
+    count: keyframes.length,
+    minChangedRatio: options.minChangedRatio,
+    maxKeyframes: options.maxFrames,
+    noiseFilters: {
+      stableFrameLookahead: options.stableFrameLookahead ?? 1,
+      cursorFilter: options.cursorFilter !== false
+    }
+  };
+
+  let previousState;
+  for (const keyframe of keyframes) {
+    previousState = await saveDesktopState({
+      trace,
+      traceDir,
+      label: labelForDesktopKeyframe(keyframe),
+      buffer: keyframe.buffer,
+      metadata: keyframe.frame.metadata || firstFrame.metadata,
+      previous: previousState,
+      comparison: keyframe.comparison,
+      startedAt,
+      timestampMs: keyframe.frame.timestampMs,
+      keyframe: {
+        rawFrameId: keyframe.frame.id,
+        selectionReasons: keyframe.selectionReasons,
+        skippedRawFrameCount: keyframe.skippedRawFrameCount
+      }
+    });
+  }
+
+  trace.settings.rawFrames.count = trace.rawFrames.length;
+  await writeTrace(traceDir, trace);
+  await writeSummary(traceDir, trace);
+  return { traceDir, trace };
+}
+
 async function saveDesktopState(input) {
   const id = padNumber(input.trace.states.length + 1);
   const imageName = `${id}-${slugify(input.label, "state")}.png`;
@@ -164,12 +262,13 @@ async function saveDesktopState(input) {
   const state = {
     id,
     label: input.label,
-    timestampMs: Date.now() - input.startedAt,
+    timestampMs: input.timestampMs ?? Date.now() - input.startedAt,
     image: `frames/${imageName}`,
     diffFromPrevious,
     metrics,
     region: input.metadata.region,
-    ...(input.metadata.window ? { window: input.metadata.window } : {})
+    ...(input.metadata.window ? { window: input.metadata.window } : {}),
+    ...(input.keyframe ? { keyframe: input.keyframe } : {})
   };
   input.trace.states.push(state);
   await writeTrace(input.traceDir, input.trace);
@@ -180,6 +279,14 @@ async function saveDesktopState(input) {
     state,
     buffer: input.buffer
   };
+}
+
+function labelForDesktopKeyframe(keyframe) {
+  if (keyframe.selectionReasons.includes("first-frame")) return "first-frame";
+  if (keyframe.selectionReasons.includes("last-frame")) {
+    return `last-frame-${padNumber(keyframe.frame.timestampMs, 6)}ms`;
+  }
+  return `keyframe-${padNumber(keyframe.frame.timestampMs, 6)}ms`;
 }
 
 function regionToArg(region) {

@@ -306,7 +306,11 @@ async function captureRawTimeline(input) {
     strategy: "raw-diff-threshold-v1",
     count: keyframes.length,
     minChangedRatio: options.minChangedRatio,
-    maxKeyframes: options.maxFrames
+    maxKeyframes: options.maxFrames,
+    noiseFilters: {
+      stableFrameLookahead: 1,
+      cursorFilter: false
+    }
   };
 
   let previousState;

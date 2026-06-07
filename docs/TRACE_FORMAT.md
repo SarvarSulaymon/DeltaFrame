@@ -153,11 +153,11 @@ All image paths inside `trace.json` are relative to the trace folder and use for
 
 ## Raw Frames
 
-`rawFrames` is optional and appears when `watch` runs with `--raw-frames` or `--fps`. Raw frames are the dense sampled timeline. They are not curated states yet.
+`rawFrames` appears for default `watch` and `desktop` captures unless `--sparse` is used. Raw frames are the dense sampled timeline. They are not curated states yet.
 
-State screenshots under `frames/` remain the selected sparse frames used by the current review UI and MCP state tools. Raw frames under `raw/` are the foundation for the next keyframe distillation layer.
+State screenshots under `frames/` are the selected keyframes used by the review UI and MCP state tools. Raw frames under `raw/` are the dense source timeline used by the distiller.
 
-Raw frame reasons are simple capture-source labels such as `initial`, `sample`, `idle`, or `stable`. Future distillation metadata should add stronger keyframe reasons such as `loading-settled`, `route-change`, or `modal-opened`.
+Raw frame reasons are simple capture-source labels such as `initial` or `sample`. Distilled states add stronger keyframe reasons such as `first-frame`, `route-change`, `visual-change`, or `last-frame`.
 
 ## Selected Keyframes
 

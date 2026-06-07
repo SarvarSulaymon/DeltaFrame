@@ -75,7 +75,7 @@ The distiller should keep explainable frames such as first frame, route changes,
 
 Raw frame capture and keyframe selection should be separate decisions. Diffs remain useful for diagnostics, but selected keyframes are the main product output.
 
-Desktop capture follows the same state-selection loop, but the frame source is an optional Python `mss` backend. It supports monitor, absolute region, and native Windows window-title capture. Desktop traces use `source.type: "desktop"` and still write `trace.json`, `summary.md`, `frames/`, and `diffs/`.
+Desktop capture follows the same raw-frame and keyframe-distillation model, but the frame source is an optional Python `mss` backend. It supports monitor, absolute region, and native Windows window-title capture. Desktop traces use `source.type: "desktop"` and write `trace.json`, `summary.md`, `raw/`, `frames/`, and debug `diffs/`.
 
 Scripted flow capture opens a Playwright page, runs a user-provided ES module, and gives that script an explicit `capture(label)` callback. It is built for CI and repeatable UI flows.
 
@@ -110,7 +110,7 @@ Target trace output should distinguish:
 
 File: `src/review/server.js`
 
-The review command starts a local HTTP server and renders a static timeline UI. It is intentionally dependency-free. The UI shows each state, the visual diff from the previous state, metadata, and console warnings/errors.
+The review command starts a local HTTP server and renders a static timeline UI. It is intentionally dependency-free. The UI treats selected keyframes as the primary artifact and keeps visual diffs as secondary debug evidence.
 
 ### MCP Server
 

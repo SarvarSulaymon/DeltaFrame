@@ -11,6 +11,8 @@ import { parseViewport } from "../utils/format.js";
 
 const PROTOCOL_VERSION = "2025-06-18";
 const TRACE_RESOURCE_PREFIX = "deltaframe://trace/";
+const DEFAULT_CAPTURE_DURATION_MS = 10000;
+const DEFAULT_RAW_FPS = 10;
 
 export async function startMcpServer({ traceRoot }) {
   const server = new DeltaFrameMcpServer(traceRoot);
@@ -96,17 +98,17 @@ class DeltaFrameMcpServer {
       {
         name: "deltaframe_capture_url",
         title: "Capture URL",
-        description: "Capture meaningful visual state changes from a local web URL with Playwright.",
+        description: "Capture a dense local web timeline, then expose distilled keyframes for Codex.",
         inputSchema: {
           type: "object",
           required: ["url"],
           properties: {
             url: { type: "string", description: "URL to capture, usually localhost or file://." },
             name: { type: "string", description: "Human name for the trace." },
-            durationMs: { type: "number", description: "Capture duration in milliseconds. Must be positive for MCP calls." },
+            durationMs: { type: "number", description: "Capture duration in milliseconds. Must be positive for MCP calls. Default: 10000." },
             intervalMs: { type: "number", description: "Screenshot sample interval in milliseconds." },
             fps: { type: "number", description: "Raw capture frames per second. Implies rawFrames and sets intervalMs." },
-            rawFrames: { type: "boolean", description: "Archive every sampled screenshot under raw/ for later keyframe distillation." },
+            rawFrames: { type: "boolean", description: "Archive every sampled screenshot under raw/ for keyframe distillation. Default: true." },
             idleMs: { type: "number", description: "Wait after detecting a change before saving a stable frame." },
             minChangedRatio: { type: "number", description: "Minimum changed-pixel ratio required to save a new state." },
             pixelThreshold: { type: "number", description: "Per-pixel diff sensitivity passed to pixelmatch." },
@@ -282,16 +284,20 @@ class DeltaFrameMcpServer {
       throw new Error("deltaframe_capture_url requires a string url.");
     }
 
-    const durationMs = numberOption(args.durationMs, 15000, "durationMs");
+    const durationMs = numberOption(args.durationMs, DEFAULT_CAPTURE_DURATION_MS, "durationMs");
     if (durationMs <= 0) {
       throw new Error("durationMs must be positive for MCP capture calls.");
     }
 
     const outDir = await this.resolveOutputRoot(args.outDir);
+    if (args.rawFrames === false && args.fps !== undefined) {
+      throw new Error("fps implies rawFrames; omit fps or set rawFrames true.");
+    }
+    const rawFramesEnabled = booleanOption(args.rawFrames, true, "rawFrames");
     const rawFrameOptions = normalizeRawFrameOptions({
-      enabled: booleanOption(args.rawFrames, false, "rawFrames"),
-      fps: args.fps,
-      intervalMs: numberOption(args.intervalMs, 200, "intervalMs")
+      enabled: rawFramesEnabled,
+      fps: args.fps ?? (rawFramesEnabled && args.intervalMs === undefined ? DEFAULT_RAW_FPS : undefined),
+      intervalMs: numberOption(args.intervalMs, rawFramesEnabled ? Math.round(1000 / DEFAULT_RAW_FPS) : 200, "intervalMs")
     });
     const result = await watchWeb({
       url: args.url,

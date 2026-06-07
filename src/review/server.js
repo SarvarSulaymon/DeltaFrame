@@ -259,7 +259,7 @@ function buildHtml(initialTrace) {
     }
     .viewer {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      grid-template-columns: minmax(0, 1fr);
       gap: 16px;
       align-items: start;
     }
@@ -275,9 +275,33 @@ function buildHtml(initialTrace) {
       font-size: 15px;
       line-height: 1.2;
     }
+    .image-panel.primary h2 {
+      font-size: 16px;
+    }
     .image-panel img {
       width: 100%;
       height: auto;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+    }
+    .debug-panel {
+      margin-top: 16px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .debug-panel summary {
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .debug-panel img {
+      display: block;
+      width: 100%;
+      height: auto;
+      margin-top: 12px;
       border: 1px solid var(--line);
       border-radius: 6px;
       background: #fff;
@@ -466,24 +490,25 @@ function buildHtml(initialTrace) {
         ? state.console.map((event) => '[' + event.type + ' @ ' + event.timestampMs + 'ms] ' + event.text).join("\\n")
         : "";
       const annotation = annotations()[state.id] || "";
+      const keyframe = state.keyframe || {};
+      const keyframeRows = keyframe.selectionReasons?.length
+        ? '<dt>Keyframe</dt><dd>' + keyframe.selectionReasons.map(escapeHtml).join(", ") + '</dd>' +
+          (keyframe.rawFrameId ? '<dt>Raw Frame</dt><dd>' + escapeHtml(keyframe.rawFrameId) + '</dd>' : '') +
+          '<dt>Skipped Raw</dt><dd>' + (keyframe.skippedRawFrameCount ?? 0) + '</dd>'
+        : '';
 
       detailsEl.innerHTML =
         '<div class="viewer">' +
-          '<div class="image-panel">' +
-            '<h2>State</h2>' +
+          '<div class="image-panel primary">' +
+            '<h2>Selected Keyframe</h2>' +
             '<img src="' + fileUrl(state.image) + '" alt="Captured state">' +
-          '</div>' +
-          '<div class="image-panel">' +
-            '<h2>Diff From Previous</h2>' +
-            (state.diffFromPrevious
-              ? '<img src="' + fileUrl(state.diffFromPrevious) + '" alt="Visual diff">'
-              : '<p class="sub">Initial state has no previous diff.</p>') +
           '</div>' +
         '</div>' +
         '<dl>' +
           '<dt>ID</dt><dd>' + state.id + '</dd>' +
           '<dt>Status</dt><dd>' + (ignored ? "ignored" : "kept") + '</dd>' +
           '<dt>Label</dt><dd>' + escapeHtml(state.label) + '</dd>' +
+          keyframeRows +
           (state.route ? '<dt>Route</dt><dd>' + escapeHtml(state.route) + '</dd>' : '') +
           '<dt>URL</dt><dd>' + escapeHtml(state.url) + '</dd>' +
           '<dt>Changed</dt><dd>' + pct(state.metrics && state.metrics.ratio) + '</dd>' +
@@ -499,6 +524,12 @@ function buildHtml(initialTrace) {
             '<button class="action" id="saveNote" type="button"' + (busy ? " disabled" : "") + '>Save Note</button>' +
           '</div>' +
         '</div>' +
+        '<details class="debug-panel">' +
+          '<summary>Debug diff from previous</summary>' +
+          (state.diffFromPrevious
+            ? '<img src="' + fileUrl(state.diffFromPrevious) + '" alt="Visual diff">'
+            : '<p class="sub">Initial state has no previous diff.</p>') +
+        '</details>' +
         (issueText ? '<div class="issues">' + escapeHtml(issueText) + '</div>' : '') +
         (consoleText ? '<div class="console">' + escapeHtml(consoleText) + '</div>' : '');
 

@@ -65,12 +65,12 @@ Candidate tools:
 - [x] separate raw frames from selected keyframes in the trace folder format
 - [x] post-capture keyframe selector that keeps meaningful moments instead of deciding everything live
 - [x] duplicate clustering so stable screens appear once instead of many times
-- [ ] cursor-aware filtering for desktop/window capture
-- [ ] noise filters for blinking carets, timestamps, shimmer, and tiny animation loops
+- [x] cursor-aware filtering for desktop/window capture
+- [x] noise filters for blinking carets, timestamps, shimmer, and tiny animation loops
 - [x] keyframe reasons in metadata, for example `first-frame`, `route-change`, `visual-change`, `last-frame`
 - [x] MCP tools/resources that expose selected keyframes as the primary Codex input
-- [ ] review UI that treats diffs as secondary debug artifacts, not the main product output
-- [ ] update `watch` defaults so a 10 second capture can preserve the process, then distill it
+- [x] review UI that treats diffs as secondary debug artifacts, not the main product output
+- [x] update `watch` defaults so a 10 second capture can preserve the process, then distill it
 
 ## Non-Goals
 
