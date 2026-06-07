@@ -40,6 +40,7 @@ The CLI dispatches to capture, review, summary, doctor, and MCP commands. It use
 Files:
 
 - `src/capture/playwrightWatcher.js`
+- `src/capture/playwrightFlow.js`
 - `src/capture/desktopWatcher.js`
 - `src/capture/mss_backend.py`
 
@@ -58,6 +59,8 @@ The current state-selection algorithm:
 This prevents saving every animation tick while still catching useful UI state transitions.
 
 Desktop capture follows the same state-selection loop, but the frame source is an optional Python `mss` backend. It supports monitor, absolute region, and native Windows window-title capture. Desktop traces use `source.type: "desktop"` and still write `trace.json`, `summary.md`, `frames/`, and `diffs/`.
+
+Scripted flow capture opens a Playwright page, runs a user-provided ES module, and gives that script an explicit `capture(label)` callback. It is built for CI and repeatable UI flows.
 
 Saved-frame redactions are applied before diffing and writing PNGs. Diff masks still only affect changed-pixel calculation.
 
@@ -123,10 +126,10 @@ DeltaFrame currently supports:
 
 - `web` mode with Playwright
 - `desktop` mode for selected monitor/region/window through the optional MSS backend
+- `playwright-flow` mode for scripted capture
 
 DeltaFrame should eventually support:
 
 - `video-import` mode using FFmpeg scene detection
-- `test` mode that captures states from scripted Playwright flows
 
 Each mode should write the same trace format.

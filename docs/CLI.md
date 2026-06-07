@@ -132,6 +132,41 @@ deltaframe desktop --monitor 1 --redact '[{"x":0,"y":0,"width":320,"height":120,
 
 See [DESKTOP_CAPTURE.md](DESKTOP_CAPTURE.md) for platform permissions and support notes.
 
+## `flow`
+
+Run a scripted Playwright flow and save DeltaFrame states during the script. The script must be an ES module exporting a default async function or a named `run` function.
+
+```bash
+deltaframe flow --url http://localhost:3000 --script ./flows/onboarding.js --name onboarding-flow
+```
+
+Flow script example:
+
+```js
+export default async function ({ page, capture }) {
+  await capture("landing");
+  await page.getByRole("button", { name: "Get Started" }).click();
+  await capture("after get started");
+}
+```
+
+DeltaFrame automatically captures `initial` before the script and `final` after it. If the script throws, DeltaFrame attempts a `failure` capture, writes the trace, prints the trace path, then exits non-zero.
+
+Options:
+
+| Option | Default | Description |
+| --- | ---: | --- |
+| `--url` | required | URL to open before running the script. |
+| `--script` | required | ES module flow script. |
+| `--name` | inferred | Human name for the trace. |
+| `--out` | `.deltaframe/traces` | Root directory for captured traces. |
+| `--viewport` | `1440x900` | Browser viewport. |
+| `--channel` | Playwright default | Browser channel, for example `chrome` or `msedge`. |
+| `--headed` | `false` | Show Chromium while the flow runs. |
+| `--full-page` | `false` | Capture the whole scrollable page. |
+| `--mask` / `--mask-file` | none | Region(s) ignored during diffing. |
+| `--redact` / `--redact-file` | none | Region(s) blacked out before writing screenshots. |
+
 ## `review`
 
 Open a local review UI for a trace.
@@ -180,6 +215,11 @@ Options:
 | `--focus` | none | Area, state, or component to emphasize in the report. |
 | `--expectation` | none | Expected visual outcome to include in the report. |
 | `--json` | `false` | Print the full structured comparison JSON instead of Markdown. |
+| `--fail-on-changes` | `false` | Exit non-zero if changed, added, removed, or annotation-changed states are found. |
+| `--max-changed-states` | none | Exit non-zero if changed matched states exceed this number. |
+| `--max-added-states` | none | Exit non-zero if added states exceed this number. |
+| `--max-removed-states` | none | Exit non-zero if removed states exceed this number. |
+| `--max-annotation-changes` | none | Exit non-zero if annotation changes exceed this number. |
 
 ## `mcp`
 

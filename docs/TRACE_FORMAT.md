@@ -191,6 +191,25 @@ Example source metadata:
 
 State records may also include `region` and `window` metadata for the exact captured area.
 
+## Scripted Flow Sources
+
+`deltaframe flow` traces set `source.type` to `playwright-flow` and include the flow script path:
+
+```json
+{
+  "type": "playwright-flow",
+  "url": "http://localhost:3000",
+  "scriptPath": "/absolute/path/to/flows/onboarding.js",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "fullPage": false
+}
+```
+
+Flow states use the same fields as web states. DeltaFrame captures `initial` and `final` automatically, plus any labels captured by the script.
+
 ## Metrics
 
 `metrics.ratio` is:

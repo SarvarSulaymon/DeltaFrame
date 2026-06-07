@@ -156,6 +156,7 @@ node ./bin/deltaframe.js compare .deltaframe/traces/before .deltaframe/traces/af
 ```bash
 deltaframe watch --url <url> [options]
 deltaframe desktop [--region x,y,width,height | --monitor n | --window-title text]
+deltaframe flow --url <url> --script <file>
 deltaframe review [trace-dir]
 deltaframe summarize [trace-dir]
 deltaframe compare <before-trace-dir> <after-trace-dir>
@@ -182,6 +183,7 @@ Use `--mask` or `--mask-file` for clocks, cursors, animated banners, and other d
 
 See [docs/CLI.md](docs/CLI.md) for full command details.
 See [docs/DESKTOP_CAPTURE.md](docs/DESKTOP_CAPTURE.md) for screen/window capture setup and permissions.
+See [docs/TEST_INTEGRATION.md](docs/TEST_INTEGRATION.md) for scripted flow capture, CI comparison budgets, and failed-test attachment helpers.
 
 ## MCP Setup
 

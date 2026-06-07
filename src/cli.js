@@ -1,11 +1,13 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { listDesktopSources, listDesktopWindows, watchDesktop } from "./capture/desktopWatcher.js";
+import { capturePlaywrightFlow } from "./capture/playwrightFlow.js";
 import { watchWeb } from "./capture/playwrightWatcher.js";
 import { createTerminalCaptureControl } from "./capture/terminalControls.js";
 import { normalizeMaskRegions } from "./diff/masks.js";
 import { startMcpServer } from "./mcp/server.js";
 import { startReviewServer } from "./review/server.js";
+import { evaluateTraceComparison } from "./trace/baseline.js";
 import { compareTraces, findLatestTraceDir, readTrace } from "./trace/store.js";
 import { parseArgs } from "./utils/args.js";
 import { loadPackage, packageAvailable } from "./utils/deps.js";
@@ -34,6 +36,11 @@ export async function main(argv) {
 
   if (command === "desktop") {
     await runDesktop(parsed);
+    return;
+  }
+
+  if (command === "flow") {
+    await runFlow(parsed);
     return;
   }
 
@@ -160,6 +167,39 @@ async function runDesktop(parsed) {
   console.log(`Review it with: deltaframe review "${result.traceDir}"`);
 }
 
+async function runFlow(parsed) {
+  const url = parsed.flags.url || parsed.positionals[0];
+  const scriptPath = parsed.flags.script || parsed.positionals[1];
+  if (!url || !scriptPath) {
+    throw new Error("Missing URL or script. Example: deltaframe flow --url http://localhost:3000 --script ./flow.js");
+  }
+
+  try {
+    const result = await capturePlaywrightFlow({
+      url,
+      scriptPath,
+      name: parsed.flags.name,
+      outDir: parsed.flags.out || DEFAULT_TRACE_ROOT,
+      viewport: parseViewport(parsed.flags.viewport || "1440x900"),
+      fullPage: Boolean(parsed.flags["full-page"]),
+      headed: Boolean(parsed.flags.headed),
+      channel: parsed.flags.channel,
+      timeoutMs: numberFlag(parsed.flags.timeout, 15000),
+      pixelThreshold: numberFlag(parsed.flags["pixel-threshold"], 0.12),
+      masks: await maskOptions(parsed.flags),
+      redactions: await redactionOptions(parsed.flags)
+    });
+    console.log(`Trace written to ${result.traceDir}`);
+    console.log(`Saved ${result.trace.states.length} state(s).`);
+    console.log(`Review it with: deltaframe review "${result.traceDir}"`);
+  } catch (error) {
+    if (error.traceDir) {
+      console.error(`DeltaFrame flow trace written to ${error.traceDir}`);
+    }
+    throw error;
+  }
+}
+
 async function runSummarize(parsed) {
   const traceDir = parsed.positionals[0] || await findLatestTraceDir(DEFAULT_TRACE_ROOT);
   if (!traceDir) {
@@ -189,10 +229,20 @@ async function runCompare(parsed) {
 
   if (parsed.flags.json) {
     console.log(JSON.stringify(comparison, null, 2));
-    return;
+  } else {
+    console.log(comparison.markdown);
   }
 
-  console.log(comparison.markdown);
+  const budgets = comparisonBudgets(parsed.flags);
+  if (budgets) {
+    const evaluation = evaluateTraceComparison(comparison, budgets);
+    if (!evaluation.ok) {
+      for (const failure of evaluation.failures) {
+        console.error(`DeltaFrame baseline failed: ${failure.message}`);
+      }
+      process.exitCode = 1;
+    }
+  }
 }
 
 async function runDoctor(flags = {}) {
@@ -290,6 +340,25 @@ function optionalIntegerFlag(value, name) {
   return parsed;
 }
 
+function comparisonBudgets(flags) {
+  if (flags["fail-on-changes"]) {
+    return {
+      changedStates: 0,
+      addedStates: 0,
+      removedStates: 0,
+      annotationChanges: optionalIntegerFlag(flags["max-annotation-changes"], "max-annotation-changes") ?? 0
+    };
+  }
+
+  const budgets = {
+    changedStates: optionalIntegerFlag(flags["max-changed-states"], "max-changed-states"),
+    addedStates: optionalIntegerFlag(flags["max-added-states"], "max-added-states"),
+    removedStates: optionalIntegerFlag(flags["max-removed-states"], "max-removed-states"),
+    annotationChanges: optionalIntegerFlag(flags["max-annotation-changes"], "max-annotation-changes")
+  };
+  return Object.values(budgets).some((value) => value !== undefined) ? budgets : null;
+}
+
 function stringOption(value) {
   if (value === undefined || value === null || value === "") return undefined;
   return String(value);
@@ -341,6 +410,7 @@ Capture meaningful visual state changes from local prototypes.
 Usage:
   deltaframe watch --url <url> [options]
   deltaframe desktop [--region x,y,width,height | --monitor n | --window-title text] [options]
+  deltaframe flow --url <url> --script <file> [options]
   deltaframe review [trace-dir] [--port 7799]
   deltaframe summarize [trace-dir]
   deltaframe compare <before-trace-dir> <after-trace-dir> [--focus text] [--expectation text]
@@ -376,13 +446,27 @@ Desktop options:
   --redact <json>             Redact saved screenshot region(s), for example '[{"x":0,"y":0,"width":300,"height":80}]'.
   --redact-file <path>        Read redaction region(s) from a JSON file.
 
+Flow options:
+  --script <file>             ES module exporting default async function or named run function.
+  --url <url>                 URL to open before running the script.
+  --viewport <WxH>            Browser viewport. Default: 1440x900
+  --headed                    Show Chromium while the flow runs.
+
+Compare baseline options:
+  --fail-on-changes           Exit non-zero if changed, added, removed, or annotation-changed states are found.
+  --max-changed-states <n>    Exit non-zero if changed states exceed n.
+  --max-added-states <n>      Exit non-zero if added states exceed n.
+  --max-removed-states <n>    Exit non-zero if removed states exceed n.
+  --max-annotation-changes <n> Exit non-zero if annotation changes exceed n.
+
 Examples:
   deltaframe watch --url http://localhost:3000 --name landing-flow --headed
   deltaframe watch --url http://localhost:3000 --mask '[{"x":0,"y":0,"width":160,"height":40,"label":"clock"}]'
   deltaframe desktop --region 0,0,1200,800 --name desktop-flow
   deltaframe desktop --monitor 1 --redact '[{"x":0,"y":0,"width":320,"height":120,"label":"account"}]'
+  deltaframe flow --url http://localhost:3000 --script ./flows/onboarding.js
   deltaframe review .deltaframe/traces/2026-06-06-landing-flow
-  deltaframe compare .deltaframe/traces/before .deltaframe/traces/after --focus header
+  deltaframe compare .deltaframe/traces/before .deltaframe/traces/after --fail-on-changes
   deltaframe mcp --trace-root .deltaframe/traces
 `);
 }

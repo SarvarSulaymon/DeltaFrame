@@ -52,10 +52,10 @@ Candidate tools:
 
 ## 0.5 Test Integration
 
-- [ ] Playwright scripted flow capture
-- [ ] attach DeltaFrame traces to failed tests
-- [ ] visual regression baseline comparison
-- [ ] CI-friendly non-interactive mode
+- [x] Playwright scripted flow capture
+- [x] attach DeltaFrame traces to failed tests
+- [x] visual regression baseline comparison
+- [x] CI-friendly non-interactive mode
 
 ## Non-Goals
 
